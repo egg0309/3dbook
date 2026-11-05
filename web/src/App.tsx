@@ -3,7 +3,7 @@ import { BookDialog } from './components/BookDialog';
 import { Guide } from './components/Guide';
 import { LoadingVeil } from './components/LoadingVeil';
 import { Overlay } from './components/Overlay';
-import { AgentPanel } from './features/agent/AgentPanel';
+import { BookStageChat } from './features/agent/BookStageChat';
 import { Scene } from './three/Scene';
 import './styles.css';
 
@@ -41,9 +41,13 @@ export default function App() {
       <Scene onReady={handleReady} onOpenDialog={handleOpenDialog} />
       <div className="vignette" aria-hidden="true" />
       <div className="grain" aria-hidden="true" />
-      <Overlay ready={ready} onOpenAgent={handleOpenAgent} />
+      <Overlay
+        ready={ready}
+        onOpenAgent={handleOpenAgent}
+        agentOpen={agentOpen}
+      />
       <Guide ready={ready} />
-      <AgentPanel open={agentOpen} onClose={handleCloseAgent} />
+      <BookStageChat open={agentOpen} onClose={handleCloseAgent} />
       <LoadingVeil ready={ready} />
       <BookDialog
         open={dialog.isOpen}

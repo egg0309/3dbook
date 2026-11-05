@@ -159,6 +159,13 @@ button {
   text-shadow: 0 2px 26px rgba(0, 0, 0, 0.9);
 }
 
+/* 推演面板打开时，左下角标题让位于常驻熊形象，整体上移 */
+@media (min-width: 761px) {
+  .overlay[data-agent-open='true'] .chapter-meta {
+    bottom: 53vh;
+  }
+}
+
 .chapter-meta::before {
   content: "";
   position: absolute;

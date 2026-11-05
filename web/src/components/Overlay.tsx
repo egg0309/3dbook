@@ -7,6 +7,7 @@ import { resetJourney, useJourneyState } from '../journey';
 interface OverlayProps {
   ready: boolean;
   onOpenAgent: () => void;
+  agentOpen?: boolean;
 }
 
 function useCoarsePointer() {
@@ -25,7 +26,7 @@ function prefersReducedMotion() {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-export function Overlay({ ready, onOpenAgent }: OverlayProps) {
+export function Overlay({ ready, onOpenAgent, agentOpen }: OverlayProps) {
   const { phase } = useJourneyState();
   const rootRef = useRef<HTMLDivElement>(null);
   const buildingRef = useRef<HTMLParagraphElement>(null);
@@ -96,6 +97,7 @@ export function Overlay({ ready, onOpenAgent }: OverlayProps) {
       className="overlay"
       data-phase={phase}
       data-ready={ready}
+      data-agent-open={agentOpen ? 'true' : 'false'}
     >
       <header className="topbar">
         <div className="brand" data-intro>
