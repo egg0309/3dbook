@@ -5,9 +5,10 @@ import { Experience } from './Experience';
 
 interface SceneProps {
   onReady: () => void;
+  onOpenDialog: (title: string, content: string) => void;
 }
 
-export function Scene({ onReady }: SceneProps) {
+export function Scene({ onReady, onOpenDialog }: SceneProps) {
   return (
     <div className="scene">
       <Canvas
@@ -30,7 +31,7 @@ export function Scene({ onReady }: SceneProps) {
         }}
       >
         <Suspense fallback={null}>
-          <Experience onReady={onReady} />
+          <Experience onReady={onReady} onOpenDialog={onOpenDialog} />
         </Suspense>
       </Canvas>
     </div>

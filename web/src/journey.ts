@@ -6,12 +6,15 @@ export interface JourneyState {
   phase: JourneyPhase;
   interacted: boolean;
   resetToken: number;
+  /** 推门运镜期间为 true：此时卸载 OrbitControls，把镜头交给 useFrame */
+  cinematic: boolean;
 }
 
 let state: JourneyState = {
   phase: 'idle',
   interacted: false,
   resetToken: 0,
+  cinematic: false,
 };
 
 const listeners = new Set<() => void>();
@@ -43,11 +46,18 @@ export function markInteracted() {
   emit();
 }
 
+export function setCinematic(cinematic: boolean) {
+  if (state.cinematic === cinematic) return;
+  state = { ...state, cinematic };
+  emit();
+}
+
 export function resetJourney() {
   state = {
     phase: 'idle',
     interacted: false,
     resetToken: state.resetToken + 1,
+    cinematic: false,
   };
   emit();
 }

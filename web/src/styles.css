@@ -621,6 +621,252 @@ button {
   }
 }
 
+/* ---------------- opening guide ---------------- */
+
+.guide {
+  position: fixed;
+  left: 50%;
+  bottom: clamp(88px, 11vh, 118px);
+  z-index: 30;
+  translate: -50% 0;
+  pointer-events: none;
+  opacity: 1;
+  transition:
+    opacity 0.45s ease,
+    visibility 0s linear 0s;
+}
+
+.guide.is-dismissed {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.45s ease,
+    visibility 0s linear 0.45s;
+}
+
+.guide-panel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 22px;
+  border: 1px solid rgba(212, 175, 55, 0.28);
+  border-radius: 999px;
+  background: rgba(12, 10, 8, 0.55);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.45),
+    inset 0 0 24px rgba(212, 175, 55, 0.05);
+  backdrop-filter: blur(10px);
+  animation: breathe 2s ease-in-out infinite alternate;
+}
+
+.guide-mark {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: #d4af37;
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.8);
+}
+
+.guide-text {
+  margin: 0;
+  color: rgba(236, 226, 206, 0.92);
+  font-size: clamp(10px, 1.05vw, 12px);
+  letter-spacing: 0.18em;
+  white-space: nowrap;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.8);
+}
+
+.guide-arrow {
+  color: #d4af37;
+  font-size: 14px;
+  line-height: 1;
+  animation: guideArrow 1.6s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  from {
+    opacity: 0.6;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes guideArrow {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: translateY(-2px);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(2px);
+  }
+}
+
+/* ---------------- custom dialog ---------------- */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(4, 3, 2, 0.55);
+  backdrop-filter: blur(3px);
+  animation: dialogFade 0.28s ease both;
+}
+
+.dialog-card {
+  position: relative;
+  width: min(520px, calc(100vw - 40px));
+  padding: 32px 34px 26px;
+  border: 2px solid #d4af37;
+  border-radius: 8px;
+  background: rgba(20, 20, 20, 0.85);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 0 20px rgba(212, 175, 55, 0.3),
+    0 30px 90px rgba(0, 0, 0, 0.7);
+  color: #efe6d5;
+  animation: dialogPop 0.38s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.dialog-card::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 1px solid rgba(212, 175, 55, 0.16);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.dialog-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #d4af37;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.25s ease,
+    color 0.25s ease,
+    transform 0.25s ease;
+}
+
+.dialog-close:hover {
+  background: rgba(212, 175, 55, 0.12);
+  color: #f3dc9a;
+  transform: rotate(90deg);
+}
+
+.dialog-close:focus-visible {
+  outline: 1px solid #d4af37;
+  outline-offset: 2px;
+}
+
+.dialog-eyebrow {
+  margin: 0 0 12px;
+  color: rgba(212, 175, 55, 0.72);
+  font-size: 9px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.dialog-title {
+  margin: 0;
+  color: #e8cf8a;
+  font-family: var(--font-serif);
+  font-size: clamp(20px, 2.4vw, 27px);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-shadow: 0 0 18px rgba(212, 175, 55, 0.18);
+}
+
+.dialog-title::after {
+  content: "";
+  display: block;
+  width: 52px;
+  height: 1px;
+  margin-top: 14px;
+  background: linear-gradient(
+    90deg,
+    #d4af37,
+    rgba(212, 175, 55, 0)
+  );
+}
+
+.dialog-content {
+  margin: 20px 0 26px;
+  color: #efe6d5;
+  font-size: 13px;
+  line-height: 1.95;
+  letter-spacing: 0.09em;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.dialog-confirm {
+  padding: 9px 26px;
+  border: 1px solid rgba(212, 175, 55, 0.65);
+  border-radius: 4px;
+  background: rgba(212, 175, 55, 0.08);
+  color: #e8cf8a;
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-indent: 0.24em;
+  cursor: pointer;
+  transition:
+    background 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.dialog-confirm:hover {
+  border-color: #d4af37;
+  background: rgba(212, 175, 55, 0.18);
+  box-shadow: 0 0 18px rgba(212, 175, 55, 0.28);
+}
+
+.dialog-confirm:focus-visible {
+  outline: 1px solid #d4af37;
+  outline-offset: 3px;
+}
+
+@keyframes dialogFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialogPop {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 /* ---------------- responsive ---------------- */
 
 @media (max-width: 1180px) {
@@ -713,6 +959,34 @@ button {
   .reset-button {
     padding: 9px 14px;
     font-size: 9px;
+  }
+
+  .guide {
+    bottom: 96px;
+    width: calc(100vw - 32px);
+  }
+
+  .guide-panel {
+    justify-content: center;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+
+  .guide-text {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    line-height: 1.7;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .dialog-card {
+    padding: 28px 22px 22px;
+  }
+
+  .dialog-content {
+    font-size: 12px;
+    letter-spacing: 0.06em;
   }
 }
 

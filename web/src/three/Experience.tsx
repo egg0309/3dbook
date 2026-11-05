@@ -6,9 +6,10 @@ import { HalftoneBackdrop } from './HalftoneBackdrop';
 
 interface ExperienceProps {
   onReady: () => void;
+  onOpenDialog: (title: string, content: string) => void;
 }
 
-export function Experience({ onReady }: ExperienceProps) {
+export function Experience({ onReady, onOpenDialog }: ExperienceProps) {
   useEffect(() => {
     const timer = window.setTimeout(onReady, 80);
     return () => window.clearTimeout(timer);
@@ -19,7 +20,7 @@ export function Experience({ onReady }: ExperienceProps) {
       <color attach="background" args={['#080605']} />
       <HalftoneBackdrop />
       <Atmosphere />
-      <Book />
+      <Book onOpenDialog={onOpenDialog} />
       <Dust />
     </>
   );
