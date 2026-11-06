@@ -5,7 +5,7 @@ import { Experience } from './Experience';
 
 interface SceneProps {
   onReady: () => void;
-  onOpenDialog: (title: string, content: string) => void;
+  onOpenDialog: (id: string, title: string, content: string) => void;
 }
 
 export function Scene({ onReady, onOpenDialog }: SceneProps) {

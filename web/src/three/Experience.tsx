@@ -6,7 +6,7 @@ import { HalftoneBackdrop } from './HalftoneBackdrop';
 
 interface ExperienceProps {
   onReady: () => void;
-  onOpenDialog: (title: string, content: string) => void;
+  onOpenDialog: (id: string, title: string, content: string) => void;
 }
 
 export function Experience({ onReady, onOpenDialog }: ExperienceProps) {

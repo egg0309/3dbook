@@ -4,8 +4,15 @@ import { Guide } from './components/Guide';
 import { LoadingVeil } from './components/LoadingVeil';
 import { Overlay } from './components/Overlay';
 import { BookStageChat } from './features/agent/BookStageChat';
+import { HOTSPOT_IDS, type HotspotId } from './features/agent/script';
 import { Scene } from './three/Scene';
 import './styles.css';
+
+const HOTSPOT_TOTAL = HOTSPOT_IDS.length;
+
+function isHotspotId(id: string): id is HotspotId {
+  return (HOTSPOT_IDS as readonly string[]).includes(id);
+}
 
 interface DialogState {
   isOpen: boolean;
@@ -23,14 +30,28 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(CLOSED_DIALOG);
+  const [visitedHotspots, setVisitedHotspots] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
 
   const handleReady = useCallback(() => setReady(true), []);
   const handleOpenAgent = useCallback(() => setAgentOpen(true), []);
   const handleCloseAgent = useCallback(() => setAgentOpen(false), []);
 
-  const handleOpenDialog = useCallback((title: string, content: string) => {
-    setDialog({ isOpen: true, title, content });
-  }, []);
+  const handleOpenDialog = useCallback(
+    (id: string, title: string, content: string) => {
+      if (isHotspotId(id)) {
+        setVisitedHotspots((prev) => {
+          if (prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.add(id);
+          return next;
+        });
+      }
+      setDialog({ isOpen: true, title, content });
+    },
+    [],
+  );
 
   const handleCloseDialog = useCallback(() => {
     setDialog((current) => ({ ...current, isOpen: false }));
@@ -47,7 +68,12 @@ export default function App() {
         agentOpen={agentOpen}
       />
       <Guide ready={ready} />
-      <BookStageChat open={agentOpen} onClose={handleCloseAgent} />
+      <BookStageChat
+        open={agentOpen}
+        onClose={handleCloseAgent}
+        visitedHotspots={[...visitedHotspots]}
+        totalHotspots={HOTSPOT_TOTAL}
+      />
       <LoadingVeil ready={ready} />
       <BookDialog
         open={dialog.isOpen}

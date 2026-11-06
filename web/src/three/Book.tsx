@@ -1262,8 +1262,8 @@ interface PopUpSceneProps {
   /** 书本展开进度 0 → 1，由 Book 的 useFrame 每帧写入 */
   openRef: RefObject<number>;
   resetToken: number;
-  /** 把点击机关的内容交给 Canvas 外的 React 弹窗 */
-  onOpenDialog: (title: string, content: string) => void;
+  /** 把点击机关的内容交给 Canvas 外的 React 弹窗，id 为热点图层标识，用于探索进度统计 */
+  onOpenDialog: (id: string, title: string, content: string) => void;
   /** 右页页帧：原点在书脊，X 横向、Y 页面法线、Z 指向读者 */
   rightPageRef: RefObject<THREE.Object3D | null>;
   /** 左页页帧：挂在封面铰链上，随封面一起翻转 */
@@ -1524,7 +1524,7 @@ function PopUpScene({
 
     // 熊 / 会议群像 / 背包：交给 React 层的自定义弹窗
     const dialog = POPUP_DIALOGS[layer.id];
-    if (dialog) onOpenDialog(dialog.title, dialog.content);
+    if (dialog) onOpenDialog(layer.id, dialog.title, dialog.content);
   };
 
   useFrame((state) => {
@@ -1854,7 +1854,7 @@ function CameraParallax() {
 }
 
 interface BookProps {
-  onOpenDialog: (title: string, content: string) => void;
+  onOpenDialog: (id: string, title: string, content: string) => void;
 }
 
 export function Book({ onOpenDialog }: BookProps) {

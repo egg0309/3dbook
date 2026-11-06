@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { LEVELS, STAGE_INDEX, optionLabel } from './script';
+import {
+  EXPLORE_OPENING,
+  HOTSPOT_IDS,
+  LEVELS,
+  STAGE_INDEX,
+  optionLabel,
+} from './script';
 import { useAgent } from './useAgent';
 import type { AgentOption, ChoiceCode } from './types';
 import './bookStageChat.css';
@@ -7,7 +13,12 @@ import './bookStageChat.css';
 interface BookStageChatProps {
   open: boolean;
   onClose: () => void;
+  /** 已查看过的立体书热点 id（与 script.ts 的 HOTSPOT_IDS 对应） */
+  visitedHotspots: readonly string[];
+  totalHotspots: number;
 }
+
+type ChatPhase = 'explore' | 'drama';
 
 function useTypewriter(text: string, speed = 32) {
   const [count, setCount] = useState(0);
@@ -28,11 +39,29 @@ function useTypewriter(text: string, speed = 32) {
   return { shown: text.slice(0, count), done: count >= text.length };
 }
 
-export function BookStageChat({ open, onClose }: BookStageChatProps) {
+export function BookStageChat({
+  open,
+  onClose,
+  visitedHotspots,
+  totalHotspots,
+}: BookStageChatProps) {
   const agent = useAgent();
   const [input, setInput] = useState('');
   const [viewIndex, setViewIndex] = useState(0);
+  const [phase, setPhase] = useState<ChatPhase>('explore');
+  const everExploredRef = useRef(false);
   const atEndRef = useRef(true);
+
+  const exploreTyper = useTypewriter(EXPLORE_OPENING);
+  const allVisited = visitedHotspots.length >= totalHotspots;
+
+  const enterDrama = () => {
+    if (!allVisited) return;
+    everExploredRef.current = true;
+    atEndRef.current = false;
+    setViewIndex(0);
+    setPhase('drama');
+  };
 
   // user 消息只发给后端，不进画面；内部状态机仍保留全部消息
   const visible = agent.messages.filter((m) => m.role !== 'user');
@@ -66,9 +95,11 @@ export function BookStageChat({ open, onClose }: BookStageChatProps) {
   const handleOption = (option: AgentOption) => agent.choose(option);
 
   const handleReset = () => {
-    atEndRef.current = true;
+    atEndRef.current = false;
     setViewIndex(0);
     agent.reset();
+    // 本会话已完整探索过一次，重玩不再强制点热点
+    setPhase(everExploredRef.current ? 'drama' : 'explore');
   };
 
   const choiceTags = [
@@ -78,11 +109,13 @@ export function BookStageChat({ open, onClose }: BookStageChatProps) {
   ].filter((code): code is ChoiceCode => Boolean(code));
 
   const placeholder =
-    agent.stage === 'done'
-      ? '推演已结束'
-      : agent.stage === 'review'
-        ? '输入“复盘”，或向老陈提问'
-        : '向老陈提问…';
+    phase === 'explore'
+      ? '先探索立体书，再开始推演'
+      : agent.stage === 'done'
+        ? '推演已结束'
+        : agent.stage === 'review'
+          ? '输入“复盘”，或向老陈提问'
+          : '向老陈提问…';
 
   const isNarration = current?.role === 'narration' || current?.role === 'system';
   const showQuestion =
@@ -100,11 +133,12 @@ export function BookStageChat({ open, onClose }: BookStageChatProps) {
     current?.role === 'npc' &&
     agent.stage === 'review' &&
     !agent.report;
+  // 旁白/过场段不在消息末尾时，播完必须给“继续”；不能要求 atEnd——开场旁白恰恰是第一条
   const showContinue =
-    atEnd &&
     typingDone &&
     !agent.loading &&
     !agent.error &&
+    safeIndex < visible.length - 1 &&
     (isNarration || (!agent.currentLevel && agent.stage !== 'review'));
 
   return (
@@ -152,6 +186,50 @@ export function BookStageChat({ open, onClose }: BookStageChatProps) {
             ×
           </button>
 
+          {phase === 'explore' ? (
+            <div className="bsc-dialog bsc-explore">
+              <div className="bsc-left">
+                <div className="bsc-bubble">
+                  <span className="bsc-npc-name">老陈</span>
+                  <p>{exploreTyper.shown}</p>
+                </div>
+              </div>
+              <div className="bsc-right bsc-explore-card">
+                {visitedHotspots.length === 0 && (
+                  <p className="bsc-explore-cue">
+                    <span className="bsc-explore-arrow" aria-hidden="true">
+                      ↑
+                    </span>
+                    点击上方立体书上的大门，推门进屋
+                  </p>
+                )}
+                <p className="bsc-explore-title">
+                  先探索会场（{visitedHotspots.length}/{totalHotspots}）
+                </p>
+                <div className="bsc-explore-dots" aria-hidden="true">
+                  {HOTSPOT_IDS.map((id) => (
+                    <span key={id} data-lit={visitedHotspots.includes(id)} />
+                  ))}
+                </div>
+                <p className="bsc-explore-hint">
+                  {allVisited
+                    ? '四处都看过了，可以开会了'
+                    : '屋内点击四处机关：人群、木箱、火盆、行囊（后三个集中在画面右下角）'}
+                </p>
+                <button
+                  type="button"
+                  className="bsc-start"
+                  disabled={!allVisited}
+                  onClick={enterDrama}
+                >
+                  {allVisited
+                    ? '开始推演'
+                    : `先把四处都看完（${visitedHotspots.length}/${totalHotspots}）`}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
           <div className="bsc-progress" aria-label="推演进度">
             {LEVELS.map((level, index) => {
               const currentIndex = STAGE_INDEX[agent.stage];
@@ -251,6 +329,8 @@ export function BookStageChat({ open, onClose }: BookStageChatProps) {
               )}
             </div>
           )}
+            </>
+          )}
         </section>
       )}
 
@@ -263,14 +343,21 @@ export function BookStageChat({ open, onClose }: BookStageChatProps) {
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder={placeholder}
-            disabled={agent.loading || agent.stage === 'done'}
+            disabled={
+              phase === 'explore' ||
+              agent.loading ||
+              agent.stage === 'done'
+            }
             aria-label="自由输入"
             maxLength={200}
           />
           <button
             type="submit"
             disabled={
-              !input.trim() || agent.loading || agent.stage === 'done'
+              phase === 'explore' ||
+              !input.trim() ||
+              agent.loading ||
+              agent.stage === 'done'
             }
           >
             发送

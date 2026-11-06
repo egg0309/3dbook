@@ -13,6 +13,20 @@ export const AGENT_OPENING = {
   npc: '小同志，博古同志说失败是因为敌人太强。可凯丰同志说毛泽东同志“照着两本书打仗”。到底是该批评、还是不该批评，我也拿不准。',
 } as const;
 
+/** 探索阶段老陈引导语（固定文案，不调 LLM），先引导推门进屋，四处热点看完才进入问答 */
+export const EXPLORE_OPENING =
+  '小同志，先别急着问话。你瞧见那扇门没有？伸手点一下，把门推开，咱们进会场去——要找的线索全在这屋里头：围坐争论的人、将就当凳的木箱、驱不散寒的火盆、来不及放下的行囊。你一处一处点着看，四处都看遍了，心里有了底，咱们再好好唠。';
+
+/** 计入探索进度的立体书热点 id，与 Book.tsx 的 POPUP_DIALOGS 键对应（bear 只保留 3D 弹窗，不计进度） */
+export const HOTSPOT_IDS = [
+  'zunyi_people',
+  'zunyi_crates',
+  'zunyi_stove',
+  'zunyi_bag',
+] as const;
+
+export type HotspotId = (typeof HOTSPOT_IDS)[number];
+
 export const LEVELS: AgentLevel[] = [
   {
     stage: 'level1',
