@@ -57,10 +57,6 @@ function easeInOutQuart(value: number) {
     : 1 - Math.pow(-2 * value + 2, 4) / 2;
 }
 
-function easeOutCubic(value: number) {
-  return 1 - Math.pow(1 - value, 3);
-}
-
 function smoothstep01(value: number) {
   const t = THREE.MathUtils.clamp(value, 0, 1);
   return t * t * (3 - 2 * t);
@@ -181,9 +177,18 @@ function Emblem({ centerX, gold, red, starGeometry, back = false }: EmblemProps)
 interface BookModelProps {
   textures: BookTextures;
   coverHingeRef: RefObject<THREE.Group | null>;
+  /** 左页页帧：挂在封面铰链上，供立体机关读取 matrixWorld */
+  leftPageRef: RefObject<THREE.Object3D | null>;
+  /** 右页页帧：固定在页块书脊上，供立体机关读取 matrixWorld */
+  rightPageRef: RefObject<THREE.Object3D | null>;
 }
 
-function BookModel({ textures, coverHingeRef }: BookModelProps) {
+function BookModel({
+  textures,
+  coverHingeRef,
+  leftPageRef,
+  rightPageRef,
+}: BookModelProps) {
   const starGeometry = useMemo(() => createStarGeometry(1, 0.42, 0.06), []);
   const cornerGeometry = useMemo(
     () => createCornerGeometry(0.165, 0.038, 0.012),
@@ -476,7 +481,28 @@ function BookModel({ textures, coverHingeRef }: BookModelProps) {
           red={materials.red}
           starGeometry={starGeometry}
         />
+
+        {/*
+         * 左页页帧：封面内衬的书脊边。
+         * 封面翻开 180° 后，它正好落在书脊上，轴向和右页页帧重合；
+         * 封面合上时随铰链翻转，机关被夹回书页之间。
+         */}
+        <object3D
+          ref={leftPageRef}
+          position={[0, 0, FRONT_Z - BOOK_SURFACE_Y]}
+          quaternion={LEFT_PAGE_QUATERNION}
+        />
       </group>
+
+      {/*
+       * 右页页帧：原点在书脊、页块表面。
+       * 局部 X = 横跨书页，Y = 页面法线（书局部 +Z），Z = 朝读者（书局部 -Y）。
+       */}
+      <object3D
+        ref={rightPageRef}
+        position={[SPINE_X, 0, BOOK_SURFACE_Y]}
+        rotation={[Math.PI / 2, 0, 0]}
+      />
     </group>
   );
 }
@@ -487,12 +513,21 @@ function BookModel({ textures, coverHingeRef }: BookModelProps) {
 
 type PopUpSceneId = 'outside' | 'inside';
 type PopUpLayerId = 'building' | 'bear' | 'meetingRoom' | 'bag' | 'roomBg';
+type PopUpHalfSide = 'left' | 'right';
+type PopUpFold = 'in' | 'out';
 
 /**
  * 展开后整个跨页的中心 X。
  * 与 Book 里 spreadCenter 的算法保持一致，OrbitControls 以它为环绕中心。
  */
 const SPREAD_CENTER_X = -((HALF_W + W - PAGE_W / 2) / 2);
+
+/**
+ * 书脊 X：书本摊平后，左页（翻开的封面内衬）与右页（页块）
+ * 在这里相接。跨页机关以它为共同折缝：
+ * 左半张纸在左页，右半张纸在右页。
+ */
+const SPINE_X = -HALF_W;
 
 /**
  * 书摊平后，右页纸面的高度（书局部坐标）。
@@ -505,36 +540,64 @@ const SPREAD_CENTER_X = -((HALF_W + W - PAGE_W / 2) / 2);
 const BOOK_SURFACE_Y = PAGE_T / 2 + 0.0018;
 
 /**
- * 世界对齐舞台。
+ * 左页页帧在封面铰链组里的局部朝向。
  *
- * 书完全摊平后 spinFrame 绕 X 转了 -90°，书页法线朝上。
- * 在书里再放一个绕 X 转 +90° 的舞台，两级旋转相互抵消，
- * 舞台内部就回到世界坐标：
- *   x = 右页左右（0 = 右页中心）
- *   y = 垂直向上（纸面高度 = BOOK_SURFACE_Y）
- *   z = 朝镜头的前后纵深（越大越靠近镜头）
- * 这样需求里的 z = -1 / 0 / 0.5 就可以直接写进图层配置。
+ * 左页就是封面内衬。封面翻开 180° 后，这个朝向必须和右页页帧完全一致：
+ *   X 轴 = 横跨书页（朝读者右侧）
+ *   Y 轴 = 页面法线（垂直纸面向上）
+ *   Z 轴 = 页面深度方向（朝读者）
+ * 封面合上时它跟着封面一起翻转（法线朝下、页面被夹住），
+ * 所以机关会随书本合上而被“夹”进书页之间，而不是悬浮在空气里。
+ *
+ * 推导：L = Ry(π) · Rx(π/2)，等价的轴角是绕 (0, √½, −√½) 转 180°。
  */
-const POPUP_STAGE_ROTATION_X = Math.PI / 2;
-
-/** 纸板最大宽度：等于右页宽度，背景墙按 100% 页宽计算 */
-const POPUP_MAX_WIDTH = PAGE_W;
+const LEFT_PAGE_QUATERNION = new THREE.Quaternion(
+  0,
+  Math.SQRT1_2,
+  -Math.SQRT1_2,
+  0,
+);
 
 /**
- * 折纸的平铺起始角：+PI/2；完全翻开时折叠组转到 0。
- *
- * 铰链在纸板底边、正好贴着纸面。折叠组从 +PI/2 转到 0，
- * 就是纸板从「平铺在页面上」翻到「垂直立起」的物理动作；
- * 立起后纸板底边仍贴着纸面，mesh 自身 rotation 保持 [0, 0, 0]，
- * 贴图不会左右翻转。
+ * 纸板厚度与叠层数（源码 cardStack 的轻量版）。
+ * 每张纸板 = 正面贴图 + 若干层向后退的纸芯 + 背面，
+ * 从侧面看有真实的“纸板边”，而不是一张零厚度的贴纸。
  */
-const POPUP_FOLD_FLAT = Math.PI / 2;
-const POPUP_CLICK_THRESHOLD = 0.8;
+const CARD_THICKNESS = 0.008;
+const CARD_LAYERS = 3;
+const CARD_EDGE_COLOR = '#c7b28c';
 
-/** 推门运镜：1 秒推到门前，室内画面停留 0.25 秒，然后瞬间弹回原位 */
-const DOLLY_DURATION = 1.0;
+/**
+ * 机关淡入区间（书本展开进度 open：0 → 1）。
+ *
+ * open 与封面角度成正比：封面翻开角度 = π × open。
+ * V 折纸板在封面还没完全摊平时就会从书页里立起来，
+ * 只要封面还翘着几度，纸板就会和封面相交。
+ * 所以一直藏到封面剩余角度约 3.6°（open = 0.98）才开始淡入，
+ * open = 0.999（剩余 0.18°）时完全显示；
+ * open 低于起点时 visible = false 且 opacity = 0，
+ * 合上的书绝对不可能渲染出任何一张纸板。
+ */
+const POPUP_REVEAL_START = 0.5;
+const POPUP_REVEAL_END = 0.5;
+/** 低于这个透明度直接整组隐藏，连纸板边角都不提交渲染 */
+const POPUP_VISIBLE_EPSILON = 0.001;
+
+/**
+ * 推门运镜：
+ * 0.8s 推到建筑前 → 瞬间切换室内 → 停留 0.25s → 0.8s 平滑退回原位。
+ */
+const DOLLY_DURATION = 0.8;
+const DOLLY_BACK_DURATION = 0.8;
 const DOLLY_HOLD = 0.25;
 const DOLLY_CLOSE_Z = 1.0;
+
+/** 相机视差幅度：鼠标归一化坐标 → 世界单位的偏移 */
+const PARALLAX_X = 0.16;
+const PARALLAX_Y = 0.08;
+
+/** 视差阻尼：60fps 下等价于源码里的 0.1 */
+const PARALLAX_DAMPING = 0.1;
 
 interface PopUpSource {
   url: string;
@@ -586,69 +649,104 @@ interface PopUpLayerConfig {
   id: PopUpLayerId;
   scene: PopUpSceneId;
   /**
-   * 纸板显示宽度（书页局部坐标，PAGE_W = 1.625）。
-   * 高度由贴图真实宽高比自动推导，永远不会被拉伸变形。
+   * 折缝（胶线在内侧的端点）在页面深度轴上的位置。
+   * +z = 靠近读者，-z = 靠近书口（页面后端）。
    */
-  width: number;
-  /** 右页上的横向位置：0 = 右页中心 */
-  x: number;
-  /** 前后层次：-1 最后（背景墙），0 中景，0.5 最前（背包） */
   z: number;
-  /** 同一场景内的展开延迟：前层稍晚立起，更像真实机关 */
-  delay: number;
+  /**
+   * 半张纸的宽度：从书脊量到纸板外缘。
+   * 一张跨页图的总宽 = 2 × halfWidth，UV 在 0.5 处切开。
+   */
+  halfWidth: number;
+  /**
+   * 胶线（纸板贴在书页上的那条底边）与页面深度轴的夹角，弧度制。
+   * 角度越大，立起来后的 V 型越尖。
+   */
+  angle: number;
+  /**
+   * out = 屋脊：两条胶线向后收，书脊处的折缝朝读者凸起（帐篷/建筑正面）；
+   * in  = 山谷：两条胶线向前张，折缝凹进书页深处（背景幕布/室内墙）。
+   *
+   * 和源码 VFold 的 fold 参数完全一致。
+   */
+  fold: PopUpFold;
+  /**
+   * 整组纸板沿书本 X 轴的横向偏移（单位：书页坐标）。
+   * 负数 = 向画面左侧移动，正数 = 向右侧移动。
+   * 最终会叠加到 makeBasis 矩阵的 position.x 上，左右两半同步平移。
+   */
+  offsetX?: number;
 }
 
 /**
- * 尺寸比例（以右页宽度 PAGE_W = 1.625 / 深度 PAGE_H = 2.28 为基准）：
+ * 跨页放大倍数。
  *
- *   roomBg       100% 页宽 = 1.625      → 高 0.897（贴图比例 1.8115）
- *   building      70% 页宽 = 1.1375     → 高 0.556（贴图比例 2.0455）
- *   meetingRoom   80% 页宽 = 1.30       → 高 0.527（贴图比例 2.4668）
- *   bear          18.5% 页宽 = 0.30     → 高 0.401（贴图比例 0.7484）
- *   bag           18.5% 页宽 = 0.30     → 高 0.281（贴图比例 1.0675）
+ * 1 = 源码原始尺寸：每个图层总宽约一页，左右各只占半页；
+ * 2 = 每侧铺满各自那一页，整组机关横向撑满左右两页。
+ * 高度按贴图比例同步放大，不会拉伸。
+ */
+const POPUP_SPREAD_SCALE = 2;
+
+/**
+ * 图层配置（放大后的尺寸以左右两页总宽 ≈3.25 为基准）：
+ *
+ *   roomBg       总宽 3.250 → halfWidth 1.6250，高 ≈1.79（贴图比例 1.8115）
+ *   building     总宽 3.250 → halfWidth 1.6250，高 ≈1.59（贴图比例 2.0455）
+ *   meetingRoom  总宽 2.600 → halfWidth 1.3000，高 ≈1.05（贴图比例 2.4668）
+ *   bear         总宽 0.400 → halfWidth 0.2000，高 ≈0.53（贴图比例 0.7484）
+ *   bag          总宽 0.600 → halfWidth 0.3000，高 ≈0.56（贴图比例 1.0675）
+ *
+ * z 是折缝在页面上的前后位置：室外建筑在最前（z=0），
+ * 熊站在它前面（z=0.3），避免和建筑正面穿模；
+ * 室内的“墙”放在页面后半段（负 z），群像居中，背包最靠近读者。
+ *
+ * offsetX 是整组纸板沿书本 X 轴的横向偏移，负数 = 向画面左侧移动。
  */
 const POPUP_LAYERS: PopUpLayerConfig[] = [
-  // 室内：背景墙最后、群像在中景、背包最前，正好是 z = -1 / 0 / 0.5
+  // 室内：背景墙最后、群像居中、背包最前
   {
     id: 'roomBg',
     scene: 'inside',
-    width: PAGE_W, // 100% 页宽，正好铺满右页
-    x: 0,
-    z: -1,
-    delay: 0,
+    z: -0.5,
+    halfWidth: (PAGE_W / 2) * POPUP_SPREAD_SCALE,
+    angle: 0.38,
+    fold: 'in', // 背景幕布：向外张开，包住整个跨页
   },
   {
     id: 'meetingRoom',
     scene: 'inside',
-    width: PAGE_W*0.8, // 80% 页宽，左右各留 10% 纸边
-    x: 0,
-    z: 0,
-    delay: 0,
+    z: -0.3,
+    halfWidth: ((PAGE_W * 0.8) / 2) * POPUP_SPREAD_SCALE,
+    angle: 0.34,
+    fold: 'in',
   },
   {
     id: 'bag',
     scene: 'inside',
-    width: 0.3, // 约 18.5% 页宽，右下近景小物件
-    x: 0.15,
-    z: 0.5,
-    delay: 0.18,
+    z: 0.32,
+    halfWidth: 0.15 * POPUP_SPREAD_SCALE,
+    angle: 0.26,
+    fold: 'out',
   },
-  // 门外：建筑在中景，熊在建筑正前方（z 比建筑大 0.1），站在门口
+  // 门外：建筑是屋脊折，熊站在建筑正前方
   {
     id: 'building',
     scene: 'outside',
-    width: PAGE_W, // 70% 页宽，水平居中
-    x: 0,
     z: 0,
-    delay: 0,
+    halfWidth: (PAGE_W / 2) * POPUP_SPREAD_SCALE,
+    angle: 0.34,
+    fold: 'out',
   },
   {
     id: 'bear',
     scene: 'outside',
-    width: 0.2, // 约 18.5% 页宽，比建筑矮，站在门前
-    x: -0.2,
-    z: 0.1,
-    delay: 0.14,
+    // 比建筑更靠近读者，避免和建筑正面穿模
+    z: 0.3,
+    // 负值 = 向画面左侧移动，让熊站在左侧书页前
+    offsetX: -0.5,
+    halfWidth: 0.1 * POPUP_SPREAD_SCALE,
+    angle: 0.22,
+    fold: 'out',
   },
 ];
 
@@ -659,18 +757,118 @@ interface CutoutTexture {
 }
 
 /**
- * 根据贴图真实宽高比推导纸板尺寸：
- * 宽度取配置值（上限为整页宽），高度 = 宽度 / 贴图宽高比。
- * 这样只改宽度就能等比缩放，图片永远不会被拉伸；
- * 位置计算与渲染共用这一份尺寸，保证底边永远贴纸面。
+ * 纸板高度：总宽 = 2 × halfWidth，按贴图真实宽高比推导，
+ * 和源码 VFold 里的 h = 2·w·image.height/image.width 完全一致。
+ * 永远不拉伸图片。
  */
-function resolvePopUpSize(
-  layer: PopUpLayerConfig,
-  cutout?: CutoutTexture,
-) {
+function popUpHeight(layer: PopUpLayerConfig, cutout?: CutoutTexture) {
   const aspect = cutout?.aspect ?? 1;
-  const width = Math.min(layer.width, POPUP_MAX_WIDTH);
-  return { width, height: width / aspect };
+  return (layer.halfWidth * 2) / aspect;
+}
+
+/**
+ * 面板几何（对应源码的 panelGeometry）：
+ *
+ * 原点在纸板底边：左半 x ∈ [−w, 0]，右半 x ∈ [0, w]，
+ * 内边缘（x = 0）就是书脊折缝，y ∈ [0, h] 沿折缝向上。
+ * UV 的 u 轴同步切开：
+ *   left  → u 0.0 ~ 0.5（外缘在 u=0，书脊在 u=0.5）
+ *   right → u 0.5 ~ 1.0（书脊在 u=0.5，外缘在 u=1）
+ * 两张纸板共用同一张贴图，拼起来才是完整的一张图。
+ */
+function createPanelGeometry(
+  x0: number,
+  x1: number,
+  height: number,
+  u0: number,
+  u1: number,
+) {
+  const geometry = new THREE.PlaneGeometry(x1 - x0, height, 1, 1);
+  geometry.translate((x0 + x1) / 2, height / 2, 0);
+
+  const uv = geometry.getAttribute('uv') as THREE.BufferAttribute;
+  for (let i = 0; i < uv.count; i += 1) {
+    uv.setX(i, uv.getX(i) < 0.5 ? u0 : u1);
+  }
+  uv.needsUpdate = true;
+  return geometry;
+}
+
+interface CardMaterials {
+  /** 正面：印刷画面，alpha 抠图 */
+  front: THREE.MeshBasicMaterial;
+  /** 纸芯：同一张图的剪影，染成硬纸板色 */
+  edge: THREE.MeshBasicMaterial;
+  /**
+   * 背面：同一张图的镜像印刷。
+   *
+   * 只用 FrontSide 时，从侧面看 V 型折页，背对镜头的那一半会被整片剔除，
+   * 只留下和书页同色的纸芯，看起来就像“整张图都跑到另一边去了”。
+   * 这里再铺一层 BackSide 的印刷面，UV 预先水平镜像，
+   * 保证从任何一侧看，左右两半都同时可见、并且在书脊处拼成完整画面。
+   */
+  back: THREE.MeshBasicMaterial;
+  /** 背面镜像贴图，单独释放 */
+  backMap: THREE.Texture;
+}
+
+/** 纸芯层不参与拾取，只负责从侧面看时露出纸板边 */
+const NO_RAYCAST = () => {};
+
+interface CardHalfProps {
+  geometry: THREE.BufferGeometry;
+  materials: CardMaterials;
+  /** 由父级 useFrame 每帧写入 matrix */
+  groupRef: (node: THREE.Group | null) => void;
+  interactive: boolean;
+  onPointerOver: (event: ThreeEvent<PointerEvent>) => void;
+  onPointerOut: (event: ThreeEvent<PointerEvent>) => void;
+  onClick: (event: ThreeEvent<MouseEvent>) => void;
+}
+
+/**
+ * 一张纸板的左半 / 右半：正面画面 + 若干层纸芯 + 背面。
+ *
+ * 这个 Group 的矩阵由 useFrame 用书页帧矩阵直接写入
+ * （matrixAutoUpdate = false），所以纸板是“焊”在书页上的，
+ * 而不是用 position / rotation 拼出来的。
+ */
+function CardHalf({
+  geometry,
+  materials,
+  groupRef,
+  interactive,
+  onPointerOver,
+  onPointerOut,
+  onClick,
+}: CardHalfProps) {
+  return (
+    <group ref={groupRef} matrixAutoUpdate={false}>
+      <mesh
+        geometry={geometry}
+        material={materials.front}
+        onPointerOver={interactive ? onPointerOver : undefined}
+        onPointerOut={interactive ? onPointerOut : undefined}
+        onClick={interactive ? onClick : undefined}
+      />
+      {Array.from({ length: CARD_LAYERS }, (_, index) => (
+        <mesh
+          key={index}
+          geometry={geometry}
+          material={
+            index === CARD_LAYERS - 1 ? materials.back : materials.edge
+          }
+          // 正面在 z = 0，纸芯一层层向纸板内部退
+          position={[
+            0,
+            0,
+            -(CARD_THICKNESS * (index + 1)) / CARD_LAYERS,
+          ]}
+          raycast={NO_RAYCAST}
+        />
+      ))}
+    </group>
+  );
 }
 
 function loadImageElement(url: string): Promise<HTMLImageElement> {
@@ -854,21 +1052,57 @@ function usePopUpTextures() {
   return textures;
 }
 
+type PopUpHalfKey = `${PopUpLayerId}:${PopUpHalfSide}`;
+
+/**
+ * 模块级临时对象：useFrame 每帧都要算 5 层 × 2 半的矩阵，
+ * 复用这些向量 / 矩阵可以避免每帧向 GC 交垃圾。
+ * 整个页面只会挂载一个 PopUpScene，所以共享是安全的。
+ */
+const _frameL = new THREE.Matrix4();
+const _frameR = new THREE.Matrix4();
+const _invRoot = new THREE.Matrix4();
+const _leftMatrix = new THREE.Matrix4();
+const _rightMatrix = new THREE.Matrix4();
+const _spineL = new THREE.Vector3();
+const _spineR = new THREE.Vector3();
+const _creasePoint = new THREE.Vector3();
+const _glueL = new THREE.Vector3();
+const _glueR = new THREE.Vector3();
+const _creaseDir = new THREE.Vector3();
+const _axisX = new THREE.Vector3();
+const _axisZ = new THREE.Vector3();
+
+/**
+ * 把算好的纸板矩阵写进 Group。
+ * matrixAutoUpdate 已在 JSX 里关掉，所以这里写的是最终矩阵；
+ * matrixWorldNeedsUpdate 让渲染器在下一帧重新计算 matrixWorld。
+ */
+function applyCardMatrix(group: THREE.Group, matrix: THREE.Matrix4) {
+  group.matrix.copy(matrix);
+  group.matrixWorldNeedsUpdate = true;
+}
+
+type DollyPhase = 'approach' | 'hold' | 'return';
+
 /**
  * 一镜到底运镜状态。
- * 镜头位置从当前视角线性插值到门前，朝向用四元数 slerp，
- * 避免直接 lookAt 造成中途朝向跳变。
+ *
+ * approach：0.8s 从当前视角推到建筑前，位置 lerp、朝向 slerp；
+ * hold：镜头贴在建筑前，室内已经接手，稍作停留；
+ * return：0.8s 从门前平滑退回推门前的视角。
  */
 interface DollyState {
+  phase: DollyPhase;
   startedAt: number | null;
   fromPosition: THREE.Vector3;
   fromQuaternion: THREE.Quaternion;
   closePosition: THREE.Vector3;
   closeQuaternion: THREE.Quaternion;
-  /** 是否已经推到最大并完成门外 / 室内切换 */
-  switched: boolean;
-  /** 室内画面展示到此刻后，镜头瞬间弹回 */
-  snapAt: number | null;
+  /** 推到门前、完成门外 / 室内切换的时刻 */
+  arrivedAt: number | null;
+  /** 回程开始时刻 */
+  returnStartedAt: number | null;
 }
 
 interface PopUpSceneProps {
@@ -877,12 +1111,18 @@ interface PopUpSceneProps {
   resetToken: number;
   /** 把点击机关的内容交给 Canvas 外的 React 弹窗 */
   onOpenDialog: (title: string, content: string) => void;
+  /** 右页页帧：原点在书脊，X 横向、Y 页面法线、Z 指向读者 */
+  rightPageRef: RefObject<THREE.Object3D | null>;
+  /** 左页页帧：挂在封面铰链上，随封面一起翻转 */
+  leftPageRef: RefObject<THREE.Object3D | null>;
 }
 
 function PopUpScene({
   openRef,
   resetToken,
   onOpenDialog,
+  rightPageRef,
+  leftPageRef,
 }: PopUpSceneProps) {
   const textures = usePopUpTextures();
   const [scene, setScene] = useState<PopUpSceneId>('outside');
@@ -890,63 +1130,146 @@ function PopUpScene({
   const viewport = useThree((state) => state.size);
   const bookScale = viewport.width < viewport.height ? 0.52 : 1;
 
-  const groups = useRef<Partial<Record<PopUpLayerId, THREE.Group>>>({});
-  const meshes = useRef<Partial<Record<PopUpLayerId, THREE.Mesh>>>({});
-  const progress = useRef<Record<PopUpLayerId, number>>({
-    building: 0,
-    bear: 0,
-    meetingRoom: 0,
-    bag: 0,
-    roomBg: 0,
-  });
-  const switchStartedAt = useRef<number | null>(null);
+  const rootRef = useRef<THREE.Group>(null);
   const dolly = useRef<DollyState | null>(null);
+  /** 当前机关显隐进度：0 = 完全隐藏，1 = 完全显示 */
+  const revealRef = useRef(0);
 
-  // 稳定的 ref 回调，避免每次 render 触发 detach / attach
-  const groupSetters = useMemo(() => {
+  // 每一层的左右两张纸板各有一个 Group，矩阵由 useFrame 直接写入
+  const cardGroups = useRef<Partial<Record<PopUpHalfKey, THREE.Group>>>({});
+  const cardSetters = useMemo(() => {
     const setters = {} as Record<
-      PopUpLayerId,
+      PopUpHalfKey,
       (node: THREE.Group | null) => void
     >;
-    (Object.keys(POPUP_SOURCES) as PopUpLayerId[]).forEach((id) => {
-      setters[id] = (node) => {
-        if (node) groups.current[id] = node;
-        else delete groups.current[id];
-      };
+    POPUP_LAYERS.forEach(({ id }) => {
+      (['left', 'right'] as const).forEach((side) => {
+        const key: PopUpHalfKey = `${id}:${side}`;
+        setters[key] = (node) => {
+          if (node) {
+            // 挂载瞬间先藏起来：即使第一帧 useFrame 还没跑，
+            // 也不会在合上的封面上闪出一角纸板
+            node.visible = false;
+            cardGroups.current[key] = node;
+          } else {
+            delete cardGroups.current[key];
+          }
+        };
+      });
     });
     return setters;
   }, []);
 
-  const meshSetters = useMemo(() => {
-    const setters = {} as Record<
-      PopUpLayerId,
-      (node: THREE.Mesh | null) => void
-    >;
-    (Object.keys(POPUP_SOURCES) as PopUpLayerId[]).forEach((id) => {
-      setters[id] = (node) => {
-        if (node) meshes.current[id] = node;
-        else delete meshes.current[id];
+  // 几何体：每层拆成左右各半张，UV 在 u = 0.5 处切开
+  const panels = useMemo(() => {
+    const map: Partial<
+      Record<
+        PopUpLayerId,
+        { left: THREE.BufferGeometry; right: THREE.BufferGeometry }
+      >
+    > = {};
+    POPUP_LAYERS.forEach((layer) => {
+      const cutout = textures[layer.id];
+      if (!cutout) return;
+      const height = popUpHeight(layer, cutout);
+      map[layer.id] = {
+        // 左半：外缘 x=-w → u=0，书脊 x=0 → u=0.5
+        left: createPanelGeometry(-layer.halfWidth, 0, height, 0, 0.5),
+        // 右半：书脊 x=0 → u=0.5，外缘 x=+w → u=1
+        right: createPanelGeometry(0, layer.halfWidth, height, 0.5, 1),
       };
     });
-    return setters;
-  }, []);
+    return map;
+  }, [textures]);
 
-  // 「重新翻阅」时把机关恢复成门外、全收起的初始状态
+  useEffect(
+    () => () => {
+      Object.values(panels).forEach((panel) => {
+        panel?.left.dispose();
+        panel?.right.dispose();
+      });
+    },
+    [panels],
+  );
+
+  // 材质：正面画面 / 纸芯剪影 / 背面，左右两半、所有纸芯共用
+  const materials = useMemo(() => {
+    const map: Partial<Record<PopUpLayerId, CardMaterials>> = {};
+    // 材质可能在书本已经打开后才加载完成，用当前进度初始化，
+    // 避免正常显示的画面上闪一帧透明
+    const initialOpacity = revealRef.current;
+    POPUP_LAYERS.forEach((layer) => {
+      const cutout = textures[layer.id];
+      if (!cutout) return;
+      const source = cutout.texture;
+      // 背面印刷用的镜像贴图：共用同一张画布，只翻转 U 轴
+      const backMap = source.clone();
+      backMap.repeat.x = -1;
+      backMap.offset.x = 1;
+      backMap.needsUpdate = true;
+      map[layer.id] = {
+        front: new THREE.MeshBasicMaterial({
+          map: source,
+          transparent: true,
+          opacity: initialOpacity,
+          alphaTest: 0.1,
+          side: THREE.FrontSide,
+          depthWrite: true,
+          toneMapped: false,
+        }),
+        edge: new THREE.MeshBasicMaterial({
+          map: source,
+          color: new THREE.Color(CARD_EDGE_COLOR),
+          transparent: true,
+          opacity: initialOpacity,
+          alphaTest: 0.1,
+          side: THREE.DoubleSide,
+          toneMapped: false,
+        }),
+        back: new THREE.MeshBasicMaterial({
+          map: backMap,
+          transparent: true,
+          opacity: initialOpacity,
+          alphaTest: 0.1,
+          side: THREE.BackSide,
+          toneMapped: false,
+        }),
+        backMap,
+      };
+    });
+    return map;
+  }, [textures]);
+
+  useEffect(
+    () => () => {
+      Object.values(materials).forEach((set) => {
+        set?.front.dispose();
+        set?.edge.dispose();
+        set?.back.dispose();
+        set?.backMap.dispose();
+      });
+    },
+    [materials],
+  );
+
+  // 「重新翻阅」时机关回到门外；纸板位置每帧由书页矩阵决定，无需手动复位
   useEffect(() => {
     dolly.current = null;
     setCinematic(false);
     setScene('outside');
-    switchStartedAt.current = null;
-    (Object.keys(progress.current) as PopUpLayerId[]).forEach((id) => {
-      progress.current[id] = 0;
-    });
-    POPUP_LAYERS.forEach(({ id }) => {
-      const group = groups.current[id];
-      const mesh = meshes.current[id];
-      if (group) group.rotation.x = POPUP_FOLD_FLAT;
-      if (mesh) mesh.visible = false;
-    });
     document.body.style.cursor = '';
+    // 重新翻阅时封面会瞬间合上：机关要同步消失，
+    // 不能等下一帧 useFrame，否则会有一帧纸板夹在合上的书页里
+    revealRef.current = 0;
+    Object.values(materials).forEach((set) => {
+      if (!set) return;
+      set.front.opacity = 0;
+      set.edge.opacity = 0;
+      set.back.opacity = 0;
+    });
+    Object.values(cardGroups.current).forEach((group) => {
+      if (group) group.visible = false;
+    });
   }, [resetToken]);
 
   /**
@@ -961,46 +1284,42 @@ function PopUpScene({
       (layer) => layer.id === 'building',
     );
     const buildingHeight = buildingLayer
-      ? resolvePopUpSize(buildingLayer, textures.building).height
+      ? popUpHeight(buildingLayer, textures.building)
       : 0.8;
 
-    // 对准建筑中心（世界坐标 = 书局部坐标 × bookScale）
+    // 对准建筑中心（世界坐标 = 书局部坐标 × bookScale）。
+    // 中心折页后建筑以书脊为中心展开，所以推门目标也从右页中心
+    // 换成书脊 X，否则镜头会推到建筑右半边。
+    const focusX = SPINE_X * bookScale;
     const focusY = (BOOK_SURFACE_Y + buildingHeight / 2) * bookScale;
-    const closePosition = new THREE.Vector3(0, focusY, DOLLY_CLOSE_Z);
-    const closeTarget = new THREE.Vector3(0, focusY, 0);
+    const closePosition = new THREE.Vector3(focusX, focusY, DOLLY_CLOSE_Z);
+    const closeTarget = new THREE.Vector3(focusX, focusY, 0);
     const closeQuaternion = new THREE.Quaternion().setFromRotationMatrix(
       new THREE.Matrix4().lookAt(closePosition, closeTarget, camera.up),
     );
 
     dolly.current = {
+      phase: 'approach',
       startedAt: null,
       fromPosition: camera.position.clone(),
       fromQuaternion: camera.quaternion.clone(),
       closePosition,
       closeQuaternion,
-      switched: false,
-      snapAt: null,
+      arrivedAt: null,
+      returnStartedAt: null,
     };
     // 运镜期间卸载 OrbitControls，避免两边同时写 camera
     setCinematic(true);
   };
 
-  const handlePointerOver = (
-    event: ThreeEvent<PointerEvent>,
-    layer: PopUpLayerConfig,
-  ) => {
+  const handlePointerOver = (event: ThreeEvent<PointerEvent>) => {
     if (openRef.current < 0.995) return;
-    if (progress.current[layer.id] < POPUP_CLICK_THRESHOLD) return;
     event.stopPropagation();
     document.body.style.cursor = 'pointer';
   };
 
-  const handlePointerOut = (
-    event: ThreeEvent<PointerEvent>,
-    layer: PopUpLayerConfig,
-  ) => {
+  const handlePointerOut = (event: ThreeEvent<PointerEvent>) => {
     if (openRef.current < 0.995) return;
-    if (progress.current[layer.id] < POPUP_CLICK_THRESHOLD) return;
     event.stopPropagation();
     document.body.style.cursor = '';
   };
@@ -1009,9 +1328,8 @@ function PopUpScene({
     event: ThreeEvent<MouseEvent>,
     layer: PopUpLayerConfig,
   ) => {
-    // 书没完全展开、机关没完全立起时不响应点击，避免翻开途中误触
+    // 书没完全展开时不响应点击，避免翻开途中误触
     if (openRef.current < 0.995) return;
-    if (progress.current[layer.id] < POPUP_CLICK_THRESHOLD) return;
     // 拖拽旋转视角时指针会从机关上划过，位移过大就不算点击
     if ((event.delta ?? 0) > 5) return;
     event.stopPropagation();
@@ -1030,66 +1348,125 @@ function PopUpScene({
   useFrame((state) => {
     const elapsed = state.clock.elapsedTime;
 
-    // 关键：openRef 就是封面翻开进度 0 → 1。
-    // 机关不再等书完全打开，而是和翻页同一帧同步起立。
-    const pageOpen = THREE.MathUtils.clamp(openRef.current, 0, 1);
-    const openingMaster = smoothstep01(pageOpen);
+    /* ---------------- 机关显隐：合上时彻底不渲染 ---------------- */
+    //
+    // openRef 是封面打开进度（封面角度 = π × open）。
+    // 封面还翘着时，立起来的 V 型纸板一定会和封面相交，
+    // 所以直到封面剩余角度约 3.6°（open = 0.98）才开始淡入，
+    // open = 0（完全合上）时 reveal = 0：
+    //   · 每个纸板 Group 的 visible = false；
+    //   · 正面 / 纸芯 / 背面材质的 opacity = 0。
+    // 两者叠加，合上的书连一个像素的纸板都不会提交渲染。
+    const reveal = THREE.MathUtils.smoothstep(
+      openRef.current,
+      POPUP_REVEAL_START,
+      POPUP_REVEAL_END,
+    );
+    if (reveal !== revealRef.current) {
+      revealRef.current = reveal;
+      Object.values(materials).forEach((set) => {
+        if (!set) return;
+        set.front.opacity = reveal;
+        set.edge.opacity = reveal;
+        set.back.opacity = reveal;
+      });
+    }
+    const popupVisible = reveal > POPUP_VISIBLE_EPSILON;
 
-    // 室内切换：先把门外纸板折回去，再从页面上立起室内纸板
-    if (scene === 'inside') {
-      if (switchStartedAt.current === null) {
-        switchStartedAt.current = elapsed;
-      }
-    } else {
-      switchStartedAt.current = null;
+    /* ---------------- 书页帧 → V 型纸板矩阵 ---------------- */
+    //
+    // 这一段是源码 VFold.update() 的 R3F 翻译：
+    //   1. 取左右书页的 matrixWorld，换算到机关根节点空间；
+    //   2. 用书页帧把「胶线方向」和「折缝位置」带到世界空间；
+    //   3. 两条胶线的叉积就是折缝方向 d；
+    //   4. 用 makeBasis(X, d, X×d) 写出两半纸板的正交基。
+    //
+    // 纸板不是靠 rotation.x 立起来的：它被两张书页的矩阵同时拽着，
+    // 书翻开多少，V 型就张开多少；书合上时它被夹回书页之间。
+    const root = rootRef.current;
+    const leftAnchor = leftPageRef.current;
+    const rightAnchor = rightPageRef.current;
+
+    if (root && leftAnchor && rightAnchor) {
+      // 机关根节点挂在书本组里，先把世界矩阵换回它的局部空间
+      root.updateWorldMatrix(true, false);
+      _invRoot.copy(root.matrixWorld).invert();
+
+      // 左页锚点挂在封面铰链上，这一句会把封面的当前角度带进来
+      leftAnchor.updateWorldMatrix(true, false);
+      rightAnchor.updateWorldMatrix(true, false);
+      _frameL.multiplyMatrices(_invRoot, leftAnchor.matrixWorld);
+      _frameR.multiplyMatrices(_invRoot, rightAnchor.matrixWorld);
+
+      POPUP_LAYERS.forEach((layer) => {
+        const leftGroup = cardGroups.current[`${layer.id}:left`];
+        const rightGroup = cardGroups.current[`${layer.id}:right`];
+        if (!leftGroup || !rightGroup) return;
+
+        // 书还没翻开（或正在合上）：整组不渲染。
+        // 同时跳过后面的矩阵计算，闭合状态下的退化 V 折
+        // 不会再把纸板摆到封面外面去。
+        leftGroup.visible = popupVisible;
+        rightGroup.visible = popupVisible;
+        if (!popupVisible) return;
+
+        // 折缝上的公共点：两张书页在同一深度处贴纸点的中点。
+        // 书完全摊平时它就是书脊上的点；翻开过程中两根书页一起定义它。
+        _spineL.set(0, 0, layer.z).applyMatrix4(_frameL);
+        _spineR.set(0, 0, layer.z).applyMatrix4(_frameR);
+        _creasePoint.copy(_spineL).add(_spineR).multiplyScalar(0.5);
+
+        // 胶线：从书脊向外贴在书页上的底边，方向随左右书页各自旋转
+        const sign = layer.fold === 'in' ? 1 : -1;
+        const c = Math.cos(layer.angle);
+        const s = Math.sin(layer.angle) * sign;
+        _glueL.set(-c, 0, s).transformDirection(_frameL);
+        _glueR.set(c, 0, s).transformDirection(_frameR);
+
+        // 折缝方向：两条胶线的叉积（fold 决定朝上还是朝下）
+        if (layer.fold === 'in') {
+          _creaseDir.crossVectors(_glueL, _glueR);
+        } else {
+          _creaseDir.crossVectors(_glueR, _glueL);
+        }
+        if (_creaseDir.lengthSq() < 1e-8) {
+          // 书完全合上时两条胶线重合，给一个稳定的退化方向，
+          // 纸板平贴在书页上（此时被封面挡住，看不见）
+          _creaseDir.set(0, 1, 0);
+        } else {
+          _creaseDir.normalize();
+        }
+
+        // 横向微调：直接叠加到最终矩阵的 position.x 上，
+        // 左右两半用同一个偏移量，折缝仍然严丝合缝，整组一起平移。
+        const offsetX = layer.offsetX ?? 0;
+        const cardX = _creasePoint.x + offsetX;
+
+        // 右半：X 沿胶线向外，Y 沿折缝向上，Z = X × Y 是纸板正面
+        _axisX.copy(_glueR);
+        _axisZ.crossVectors(_axisX, _creaseDir);
+        _rightMatrix
+          .makeBasis(_axisX, _creaseDir, _axisZ)
+          .setPosition(cardX, _creasePoint.y, _creasePoint.z);
+        applyCardMatrix(rightGroup, _rightMatrix);
+
+        // 左半：局部 X 从外缘指向书脊，贴图方向才和右半拼得上
+        _axisX.copy(_glueL).negate();
+        _axisZ.crossVectors(_axisX, _creaseDir);
+        _leftMatrix
+          .makeBasis(_axisX, _creaseDir, _axisZ)
+          .setPosition(cardX, _creasePoint.y, _creasePoint.z);
+        applyCardMatrix(leftGroup, _leftMatrix);
+      });
     }
 
-    const switchElapsed =
-      scene === 'inside' && switchStartedAt.current !== null
-        ? elapsed - switchStartedAt.current
-        : 0;
-
-    const outsideMaster =
-      scene === 'inside'
-        ? 1 - smoothstep01(THREE.MathUtils.clamp(switchElapsed / 0.5, 0, 1))
-        : openingMaster;
-
-    const insideMaster =
-      scene === 'inside'
-        ? smoothstep01(
-            THREE.MathUtils.clamp((switchElapsed - 0.45) / 0.65, 0, 1),
-          )
-        : 0;
-
-    POPUP_LAYERS.forEach((layer) => {
-      const master =
-        layer.scene === 'outside' ? outsideMaster : insideMaster;
-
-      // 同一场景里前层稍晚展开：delay 之前保持 0，之后追上 1
-      const span = 1 - layer.delay;
-      const local =
-        span <= 0
-          ? master
-          : THREE.MathUtils.clamp((master - layer.delay) / span, 0, 1);
-
-      progress.current[layer.id] = local;
-
-      const group = groups.current[layer.id];
-      const mesh = meshes.current[layer.id];
-      if (!group || !mesh) return;
-
-      // 纸板翻转完全由几何驱动，不做透明度淡入淡出
-      const fold = easeOutCubic(local);
-      group.rotation.x = THREE.MathUtils.lerp(POPUP_FOLD_FLAT, 0, fold);
-      mesh.visible = local > 0.0008;
-    });
-
-    // 一镜到底：镜头推近 → 切换到室内 → 停留 → 瞬间弹回原位
+    // 一镜到底：推近 → 切换室内 → 停留 → 平滑退回
     const shot = dolly.current;
     if (shot) {
       if (shot.startedAt === null) shot.startedAt = elapsed;
 
-      if (!shot.switched) {
+      if (shot.phase === 'approach') {
+        // 0.8s 推到建筑前，朝向同步 slerp，避免中途朝向跳变
         const t = THREE.MathUtils.clamp(
           (elapsed - shot.startedAt) / DOLLY_DURATION,
           0,
@@ -1108,81 +1485,96 @@ function PopUpScene({
         );
 
         if (t >= 1) {
-          // 推到最大：门外纸板立即收起，室内机关直接立起
-          shot.switched = true;
-          shot.snapAt = elapsed + DOLLY_HOLD;
-          switchStartedAt.current = elapsed - 2;
+          // 镜头贴到建筑：这一刻才切换场景，
+          // 门外纸板立刻隐藏、室内机关直接以书页矩阵立起。
+          camera.position.copy(shot.closePosition);
+          camera.quaternion.copy(shot.closeQuaternion);
+          shot.phase = 'hold';
+          shot.arrivedAt = elapsed;
           setScene('inside');
         }
-      } else if (shot.snapAt !== null && elapsed >= shot.snapAt) {
-        // 室内画面停留结束，镜头瞬移回推门前的原位
-        camera.position.copy(shot.fromPosition);
-        camera.quaternion.copy(shot.fromQuaternion);
-        dolly.current = null;
-        setCinematic(false);
+      } else if (shot.phase === 'hold') {
+        if (
+          shot.arrivedAt !== null &&
+          elapsed - shot.arrivedAt >= DOLLY_HOLD
+        ) {
+          shot.phase = 'return';
+          shot.returnStartedAt = elapsed;
+        }
+      } else {
+        // 0.8s 从门前平滑退回推门前的视角，保留一镜到底的完整闭环
+        if (shot.returnStartedAt === null) shot.returnStartedAt = elapsed;
+        const t = THREE.MathUtils.clamp(
+          (elapsed - shot.returnStartedAt) / DOLLY_BACK_DURATION,
+          0,
+          1,
+        );
+        const eased = easeInOutQuart(t);
+        camera.position.lerpVectors(
+          shot.closePosition,
+          shot.fromPosition,
+          eased,
+        );
+        camera.quaternion.slerpQuaternions(
+          shot.closeQuaternion,
+          shot.fromQuaternion,
+          eased,
+        );
+
+        if (t >= 1) {
+          camera.position.copy(shot.fromPosition);
+          camera.quaternion.copy(shot.fromQuaternion);
+          dolly.current = null;
+          setCinematic(false);
+        }
       }
     }
   });
 
   return (
-    <group name={`popup-${scene}`}>
-      {/*
-        世界对齐舞台：抵消书本摊平后的 -90° 倾角。
-        舞台内 x = 右页左右，y = 向上，z = 朝镜头前后。
-      */}
-      <group rotation={[POPUP_STAGE_ROTATION_X, 0, 0]}>
-        {POPUP_LAYERS.map((layer) => {
-          const cutout = textures[layer.id];
-          const { width, height } = resolvePopUpSize(layer, cutout);
-          // 背景墙只做背景，不参与悬停 / 点击
-          const interactive = layer.id !== 'roomBg';
+    /*
+     * 机关根节点：所有纸板的矩阵都由 useFrame 以这里为原点写入。
+     * 它自己不带任何变换，所以子节点的 matrix 就是书中坐标系下的矩阵。
+     */
+    <group ref={rootRef} name={`popup-${scene}`}>
+      {POPUP_LAYERS.map((layer) => {
+        const panel = panels[layer.id];
+        const card = materials[layer.id];
+        if (!panel || !card) return null;
 
-          return (
-            // 铰链组：原点就是纸板底边，y = BOOK_SURFACE_Y 让它正好贴纸面
-            <group
-              key={layer.id}
-              position={[layer.x, BOOK_SURFACE_Y, layer.z]}
-            >
-              <group
-                ref={groupSetters[layer.id]}
-                rotation={[POPUP_FOLD_FLAT, 0, 0]}
-              >
-                <mesh
-                  ref={meshSetters[layer.id]}
-                  position={[0, height / 2, 0]}
-                  rotation={[0, 0, 0]}
-                  visible={false}
-                  onPointerOver={
-                    interactive
-                      ? (event) => handlePointerOver(event, layer)
-                      : undefined
-                  }
-                  onPointerOut={
-                    interactive
-                      ? (event) => handlePointerOut(event, layer)
-                      : undefined
-                  }
-                  onClick={
-                    interactive
-                      ? (event) => handleClick(event, layer)
-                      : undefined
-                  }
-                >
-                  <planeGeometry args={[width, height]} />
-                  <meshBasicMaterial
-                    map={cutout?.texture ?? null}
-                    transparent
-                    alphaTest={0.1}
-                    side={THREE.DoubleSide}
-                    depthWrite
-                    toneMapped={false}
-                  />
-                </mesh>
-              </group>
-            </group>
-          );
-        })}
-      </group>
+        const active = scene === layer.scene;
+        // 背景墙只做背景，不参与悬停 / 点击
+        const interactive = active && layer.id !== 'roomBg';
+        const leftKey: PopUpHalfKey = `${layer.id}:left`;
+        const rightKey: PopUpHalfKey = `${layer.id}:right`;
+
+        return (
+          <group
+            key={layer.id}
+            name={`popup-layer-${layer.id}`}
+            visible={active}
+          >
+            <CardHalf
+              geometry={panel.left}
+              materials={card}
+              groupRef={cardSetters[leftKey]}
+              interactive={interactive}
+              onPointerOver={handlePointerOver}
+              onPointerOut={handlePointerOut}
+              onClick={(event) => handleClick(event, layer)}
+            />
+            <CardHalf
+              geometry={panel.right}
+              materials={card}
+              groupRef={cardSetters[rightKey]}
+              interactive={interactive}
+              onPointerOver={handlePointerOver}
+              onPointerOut={handlePointerOut}
+              onClick={(event) => handleClick(event, layer)}
+            />
+          </group>
+        );
+      })}
     </group>
   );
 }
@@ -1217,6 +1609,65 @@ function OrbitRig() {
   );
 }
 
+/**
+ * 相机视差跟随。
+ *
+ * 相机每一帧都会被三种逻辑写入：翻书时的镜头动画、OrbitControls 的
+ * damping、以及推门运镜。如果直接往 camera.position 上叠加偏移，
+ * 下一帧就会被它们覆盖，甚至让 OrbitControls 把偏移当成新的环绕半径。
+ *
+ * 这里把相机挂到一个只做微小位移的 rig 上：
+ * - camera.position 仍然是原逻辑里的局部坐标，互不干扰；
+ * - rig.position 只负责 pointer.x * 0.16 / pointer.y * 0.08 的视差；
+ * - 相机世界矩阵会自动带上 rig 的偏移，看到的画面就有呼吸感。
+ *
+ * 与源码逐行等价：
+ *   camera.position.x += (pointer.x * 0.16 - camera.position.x) * 0.1;
+ *   camera.position.y += (pointer.y * 0.08 - camera.position.y) * 0.1;
+ * 只是偏移量落在 rig 上，而不是直接改写 camera.position。
+ * 相机朝向仍由原来的 lookAt / OrbitControls / 推门运镜负责，
+ * 因此鼠标移动时画面会轻微反向移动，又不会锁死拖拽和运镜。
+ */
+function CameraParallax() {
+  const camera = useThree((state) => state.camera);
+  const scene = useThree((state) => state.scene);
+  const { cinematic } = useJourneyState();
+
+  const rig = useMemo(() => new THREE.Group(), []);
+  const cinematicRef = useRef(cinematic);
+
+  useEffect(() => {
+    cinematicRef.current = cinematic;
+  }, [cinematic]);
+
+  useEffect(() => {
+    scene.add(rig);
+    rig.add(camera);
+
+    return () => {
+      scene.add(camera);
+      scene.remove(rig);
+      rig.position.set(0, 0, 0);
+    };
+  }, [camera, scene, rig]);
+
+  useFrame((state, delta) => {
+    // 与源码的 * 0.1 等价；换算到帧率无关，掉帧时不会突然变慢
+    const damping =
+      1 - Math.pow(1 - PARALLAX_DAMPING, Math.min(delta, 0.05) * 60);
+
+    // 推门运镜时压低视差，避免和运镜方向打架
+    const factor = cinematicRef.current ? 0.25 : 1;
+    const targetX = state.pointer.x * PARALLAX_X * factor;
+    const targetY = state.pointer.y * PARALLAX_Y * factor;
+
+    rig.position.x += (targetX - rig.position.x) * damping;
+    rig.position.y += (targetY - rig.position.y) * damping;
+  });
+
+  return null;
+}
+
 interface BookProps {
   onOpenDialog: (title: string, content: string) => void;
 }
@@ -1225,6 +1676,8 @@ export function Book({ onOpenDialog }: BookProps) {
   const textures = useBookTextures();
   const camera = useThree((state) => state.camera);
   const coverHingeRef = useRef<THREE.Group>(null);
+  const leftPageRef = useRef<THREE.Object3D>(null);
+  const rightPageRef = useRef<THREE.Object3D>(null);
   const parallaxRef = useRef<THREE.Group>(null);
   const floatRef = useRef<THREE.Group>(null);
   const scaleRef = useRef<THREE.Group>(null);
@@ -1471,36 +1924,43 @@ export function Book({ onOpenDialog }: BookProps) {
   });
 
   return (
-    <group ref={parallaxRef}>
-      <group ref={floatRef}>
-        <group ref={scaleRef}>
-          <group
-            ref={spinFrameRef}
-            rotation={[BASE_TILT_X, 0, BASE_TILT_Z]}
-          >
-            <group ref={spinRef}>
-              <BookModel
-                textures={textures}
-                coverHingeRef={coverHingeRef}
-              />
-              <PopUpScene
-                openRef={open}
-                resetToken={resetToken}
-                onOpenDialog={onOpenDialog}
-              />
-              <pointLight
-                ref={innerLightRef}
-                position={[0, 0.4, 1.05]}
-                color="#ffc98f"
-                intensity={0}
-                distance={4.5}
-                decay={2}
-              />
+    <>
+      <CameraParallax />
+      <group ref={parallaxRef}>
+        <group ref={floatRef}>
+          <group ref={scaleRef}>
+            <group
+              ref={spinFrameRef}
+              rotation={[BASE_TILT_X, 0, BASE_TILT_Z]}
+            >
+              <group ref={spinRef}>
+                <BookModel
+                  textures={textures}
+                  coverHingeRef={coverHingeRef}
+                  leftPageRef={leftPageRef}
+                  rightPageRef={rightPageRef}
+                />
+                <PopUpScene
+                  openRef={open}
+                  resetToken={resetToken}
+                  onOpenDialog={onOpenDialog}
+                  leftPageRef={leftPageRef}
+                  rightPageRef={rightPageRef}
+                />
+                <pointLight
+                  ref={innerLightRef}
+                  position={[0, 0.4, 1.05]}
+                  color="#ffc98f"
+                  intensity={0}
+                  distance={4.5}
+                  decay={2}
+                />
+              </group>
             </group>
           </group>
         </group>
+        <OrbitRig />
       </group>
-      <OrbitRig />
-    </group>
+    </>
   );
 }
