@@ -10,10 +10,24 @@ export const SITE = {
   tagline: '生死攸关的转折点',
 } as const;
 
+/**
+ * 章节 id。zunyi / luding / snow / hada 已经接入 3D 书本场景，
+ * 其余章节保留在导航里，状态为 soon。
+ */
+export type ChapterId =
+  | 'zunyi'
+  | 'chishui'
+  | 'jinsha'
+  | 'luding'
+  | 'snow'
+  | 'hada'
+  | 'join';
+
+/** active = 已接入，可点击阅读；soon = 筹备中，导航置灰 */
 export type ChapterStatus = 'active' | 'soon';
 
 export interface Chapter {
-  id: string;
+  id: ChapterId;
   index: string;
   title: string;
   status: ChapterStatus;
@@ -23,10 +37,74 @@ export const CHAPTERS: Chapter[] = [
   { id: 'zunyi', index: '01', title: '遵义会议', status: 'active' },
   { id: 'chishui', index: '02', title: '四渡赤水', status: 'soon' },
   { id: 'jinsha', index: '03', title: '巧渡金沙江', status: 'soon' },
-  { id: 'luding', index: '04', title: '飞夺泸定桥', status: 'soon' },
-  { id: 'snow', index: '05', title: '雪山草地', status: 'soon' },
-  { id: 'join', index: '06', title: '会师陕北', status: 'soon' },
+  { id: 'luding', index: '04', title: '飞夺泸定桥', status: 'active' },
+  { id: 'snow', index: '05', title: '雪山草地', status: 'active' },
+  { id: 'hada', index: '06', title: '哈达铺', status: 'active' },
+  { id: 'join', index: '07', title: '会师陕北', status: 'soon' },
 ];
+
+export interface ChapterMeta {
+  /** 中文序号，例如「第一章」 */
+  index: string;
+  /** 英文序号，例如「CHAPTER 01」 */
+  number: string;
+  chapter: string;
+  chapterEn: string;
+  date: string;
+  location: string;
+  tagline: string;
+}
+
+/**
+ * 已接入章节的标题 / 年代 / 地点文案。
+ * 顶栏、左侧章节信息、开卷提示都从当前章节读取，
+ * 这样切到雪山草地时，界面文案不会还停在遵义会议。
+ */
+const ZUNYI_META: ChapterMeta = {
+  index: '第一章',
+  number: 'CHAPTER 01',
+  chapter: '遵义会议',
+  chapterEn: 'THE ZUNYI CONFERENCE',
+  date: '1935.01.15 — 01.17',
+  location: '贵州 · 遵义',
+  tagline: '生死攸关的转折点',
+};
+
+export const CHAPTER_META: Partial<Record<ChapterId, ChapterMeta>> = {
+  zunyi: ZUNYI_META,
+  luding: {
+    index: '第四章',
+    number: 'CHAPTER 04',
+    chapter: '飞夺泸定桥',
+    chapterEn: 'THE FLYING CAPTURE OF LUDING BRIDGE',
+    date: '1935.05.29',
+    location: '四川 · 泸定桥',
+    tagline: '二十二勇士的生死突击',
+  },
+  snow: {
+    index: '第五章',
+    number: 'CHAPTER 05',
+    chapter: '雪山草地',
+    chapterEn: 'SNOW MOUNTAINS AND GRASSLANDS',
+    date: '1935.06 — 08',
+    location: '四川 · 夹金山 / 松潘草地',
+    tagline: '生命极限的远征',
+  },
+  hada: {
+    index: '第六章',
+    number: 'CHAPTER 06',
+    chapter: '哈达铺',
+    chapterEn: 'HADAPU',
+    date: '1935.09',
+    location: '甘肃 · 哈达铺',
+    tagline: '一张报纸定方向',
+  },
+};
+
+/** 未接入章节回退到遵义会议文案，避免导航始终显示空白 */
+export function getChapterMeta(id: ChapterId): ChapterMeta {
+  return CHAPTER_META[id] ?? ZUNYI_META;
+}
 
 /**
  * 美术资产接入位。

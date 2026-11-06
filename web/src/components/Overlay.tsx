@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { animate, stagger } from 'animejs';
 import type { AnimationParams } from 'animejs';
-import { CHAPTERS, SITE } from '../config';
-import { resetJourney, useJourneyState } from '../journey';
+import { CHAPTERS, SITE, getChapterMeta } from '../config';
+import {
+  resetJourney,
+  setChapter,
+  useJourneyState,
+} from '../journey';
 
 interface OverlayProps {
   ready: boolean;
@@ -27,11 +31,32 @@ function prefersReducedMotion() {
 }
 
 export function Overlay({ ready, onOpenAgent, agentOpen }: OverlayProps) {
-  const { phase } = useJourneyState();
+  const { phase, chapter, dragging } = useJourneyState();
+  const meta = getChapterMeta(chapter);
   const rootRef = useRef<HTMLDivElement>(null);
   const buildingRef = useRef<HTMLParagraphElement>(null);
   const coarse = useCoarsePointer();
   const isOpen = phase === 'open';
+
+  /**
+   * 雪山步枪拖拽提示。
+   * 出现条件：雪山章节 + 书本完全展开（等价于 open.current > 0.99）；
+   * 第一次按下 / 拖动步枪时 dragging 变 true，气泡淡出后本次会话不再出现。
+   */
+  const [snowHint, setSnowHint] = useState<'shown' | 'leaving' | 'dismissed'>(
+    'shown',
+  );
+
+  useEffect(() => {
+    if (!dragging) return;
+    setSnowHint((current) => (current === 'shown' ? 'leaving' : current));
+  }, [dragging]);
+
+  useEffect(() => {
+    if (snowHint !== 'leaving') return;
+    const timer = window.setTimeout(() => setSnowHint('dismissed'), 480);
+    return () => window.clearTimeout(timer);
+  }, [snowHint]);
 
   useEffect(() => {
     if (!ready || !rootRef.current) return;
@@ -89,7 +114,10 @@ export function Overlay({ ready, onOpenAgent, agentOpen }: OverlayProps) {
           : '继续滚动 · 转过一周，书页自开'
         : phase === 'opening'
           ? '正在展开 · 请稍候'
-          : '开卷 · 遵义会议';
+          : `开卷 · ${meta.chapter}`;
+
+  const snowHintVisible =
+    chapter === 'snow' && isOpen && snowHint !== 'dismissed';
 
   return (
     <div
@@ -116,7 +144,7 @@ export function Overlay({ ready, onOpenAgent, agentOpen }: OverlayProps) {
           <span>{SITE.platform}</span>
           <span className="topbar-rule" aria-hidden="true" />
           <span>
-            {SITE.chapterIndex} · {SITE.chapter}
+            {meta.index} · {meta.chapter}
           </span>
         </div>
       </header>
@@ -124,31 +152,47 @@ export function Overlay({ ready, onOpenAgent, agentOpen }: OverlayProps) {
       <aside className="chapter-rail" data-intro aria-label="长征章节">
         <p className="rail-label">LONG MARCH · 1935</p>
         <ol>
-          {CHAPTERS.map((chapter) => (
-            <li
-              key={chapter.id}
-              data-active={chapter.status === 'active'}
-              data-status={chapter.status}
-              aria-current={chapter.status === 'active' ? 'step' : undefined}
-            >
-              <span className="rail-index">{chapter.index}</span>
-              <span className="rail-title">{chapter.title}</span>
-              <span className="rail-status">
-                {chapter.status === 'active' ? '阅读中' : '筹备中'}
-              </span>
-            </li>
-          ))}
+          {CHAPTERS.map((item) => {
+            const available = item.status === 'active';
+            const selected = item.id === chapter;
+            return (
+              <li
+                key={item.id}
+                data-active={selected}
+                data-available={available}
+                data-status={item.status}
+                aria-current={selected ? 'step' : undefined}
+              >
+                <button
+                  type="button"
+                  className="rail-item"
+                  data-ui
+                  disabled={!available}
+                  aria-label={`${item.index} ${item.title}`}
+                  onClick={() => setChapter(item.id)}
+                >
+                  <span className="rail-index">{item.index}</span>
+                  <span className="rail-title">{item.title}</span>
+                  <span className="rail-status">
+                    {selected ? '阅读中' : available ? '可阅读' : '筹备中'}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ol>
       </aside>
 
       <section className="chapter-meta" data-intro>
-        <p className="meta-index">{SITE.chapterIndex} / CHAPTER 01</p>
-        <h1>{SITE.chapter}</h1>
-        <p className="meta-en">{SITE.chapterEn}</p>
-        <p className="meta-date">
-          {SITE.date} · {SITE.location}
+        <p className="meta-index">
+          {meta.index} / {meta.number}
         </p>
-        <p className="meta-tagline">{SITE.tagline}</p>
+        <h1>{meta.chapter}</h1>
+        <p className="meta-en">{meta.chapterEn}</p>
+        <p className="meta-date">
+          {meta.date} · {meta.location}
+        </p>
+        <p className="meta-tagline">{meta.tagline}</p>
         {isOpen && (
           <p className="meta-building" ref={buildingRef} data-ui>
             <span aria-hidden="true" />
@@ -166,6 +210,19 @@ export function Overlay({ ready, onOpenAgent, agentOpen }: OverlayProps) {
           <span className="journey-fill" />
         </div>
       </div>
+
+      {snowHintVisible && (
+        <div
+          className="snow-hint"
+          data-leaving={snowHint === 'leaving' ? 'true' : 'false'}
+          role="status"
+        >
+          <span className="snow-hint-icon" aria-hidden="true">
+            ❄️
+          </span>
+          <span>看看雪堆后面是什么？试着拖动看看。</span>
+        </div>
+      )}
 
       {isOpen && (
         <div className="action-bar">
