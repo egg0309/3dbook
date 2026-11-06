@@ -512,7 +512,14 @@ function BookModel({
 /* ------------------------------------------------------------------ */
 
 type PopUpSceneId = 'outside' | 'inside';
-type PopUpLayerId = 'building' | 'bear' | 'meetingRoom' | 'bag' | 'roomBg';
+type PopUpLayerId =
+  | 'building'
+  | 'bear'
+  | 'roomBg'
+  | 'zunyi_people'
+  | 'zunyi_crates'
+  | 'zunyi_stove'
+  | 'zunyi_bag';
 type PopUpHalfSide = 'left' | 'right';
 type PopUpFold = 'in' | 'out';
 
@@ -603,23 +610,43 @@ interface PopUpSource {
   url: string;
   /** 首选文件不存在时自动回退，避免 404 让整个机关消失 */
   fallbackUrl?: string;
+  /**
+   * 保留完整画框，不按非透明内容裁切。
+   *
+   * 遵义会议的四层素材是同一台相机渲染的整幅分层场景图：
+   * 人群、木箱、火炉、书包在各自画布里的位置本身就是构图的一部分。
+   * 如果逐张裁到内容包围盒再各自缩放，每一层都会被重新居中、放大，
+   * 叠在一起时位置和比例就全乱了。开启后四层共用同一个
+   * 1671×941 画框，只靠 z 轴拉开景深。
+   */
+  preserveFrame?: boolean;
 }
 
 const POPUP_SOURCES: Record<PopUpLayerId, PopUpSource> = {
   building: { url: '/book/building.png' },
   bear: { url: '/book/bear.jpg' },
-  meetingRoom: { url: '/book/meeting_room.jpg' },
-  // 需求里写的是 bag_newspaper.jpg，但 public/book 里现有的文件名是 stove_bag.jpg。
-  // 两个都兼容：优先用需求里的名字，缺失时自动回退。
-  bag: {
-    url: '/book/bag_newspaper.jpg',
-    fallbackUrl: '/book/stove_bag.jpg',
-  },
   // 室内背景墙。需求里写的是 room_bg.jpg，仓库里实际是 room_bg.png；
   // 优先用现有 png，日后换成 jpg 也能自动回退。
   roomBg: {
     url: '/book/room_bg.png',
     fallbackUrl: '/book/room_bg.jpg',
+  },
+  // 遵义会议室内四层：同一画框，从远到近叠放
+  zunyi_people: {
+    url: '/book/zunyi_people.jpg',
+    preserveFrame: true,
+  },
+  zunyi_crates: {
+    url: '/book/zunyi_crates.jpg',
+    preserveFrame: true,
+  },
+  zunyi_stove: {
+    url: '/book/zunyi_stove.jpg',
+    preserveFrame: true,
+  },
+  zunyi_bag: {
+    url: '/book/zunyi_bag.jpg',
+    preserveFrame: true,
   },
 };
 
@@ -634,14 +661,25 @@ const POPUP_DIALOGS: Partial<Record<PopUpLayerId, PopUpDialog>> = {
     title: '历史向导老陈',
     content: '同志，里面正在开会，快推门进去看看吧！',
   },
-  meetingRoom: {
-    title: '遵义会议现场',
-    content: '你听，争论声此起彼伏……',
-  },
-  bag: {
-    title: '长征的艰苦',
+  zunyi_people: {
+    title: '激烈的交锋',
     content:
-      '火炉旁放着战士的背包，底下压着旧报纸，可见当时条件多艰苦。',
+      '争论声在狭小的屋子里回荡。面对几十万大军的围堵，红军究竟该往哪走？每一个决定，都压着三万人的生死。',
+  },
+  zunyi_crates: {
+    title: '将就的座位',
+    content:
+      '屋子里缺少板凳，木箱也成为座椅。在这连坐处都极其简陋的地方，却完成了中国革命史上最伟大的一次转折。',
+  },
+  zunyi_stove: {
+    title: '严寒的考验',
+    content:
+      '炭火微弱，根本驱不散深冬的严寒。当时的红军，不仅缺衣少食，连生火取暖都成了一种奢侈。就是在这样的苦寒中，他们硬是蹚出了一条生路。',
+  },
+  zunyi_bag: {
+    title: '随时待命的行囊',
+    content:
+      '行囊还没来得及放下，里面塞满了文件和电报。会议一旦结束，他们随时准备背起行囊，再次冲入风雪之中。',
   },
 };
 
@@ -688,43 +726,74 @@ interface PopUpLayerConfig {
 const POPUP_SPREAD_SCALE = 2;
 
 /**
+ * 遵义会议室内四层共用同一个画框宽度。
+ *
+ * 四张素材都是 1671×941 的整幅场景图（preserveFrame），
+ * 人群、木箱、火炉、书包在各自画布里的位置就是最终构图：
+ *   · 人群铺满整个跨页；
+ *   · 木箱在右下角；
+ *   · 火炉也在右下角、比木箱更靠前；
+ *   · 书包压在箱子上，靠近书脊右侧。
+ * 因此不能逐层裁切后各自缩放，否则每一层都会重新居中，
+ * 叠在一起时构图完全错位。统一 halfWidth = 半页宽：
+ * 总宽 3.25 正好铺满左右两页，高度 ≈1.83，仍在页高 2.28 内。
+ */
+const ZUNYI_LAYER_HALF_WIDTH = (PAGE_W / 2) * POPUP_SPREAD_SCALE;
+
+/**
  * 图层配置（放大后的尺寸以左右两页总宽 ≈3.25 为基准）：
  *
- *   roomBg       总宽 3.250 → halfWidth 1.6250，高 ≈1.79（贴图比例 1.8115）
- *   building     总宽 3.250 → halfWidth 1.6250，高 ≈1.59（贴图比例 2.0455）
- *   meetingRoom  总宽 2.600 → halfWidth 1.3000，高 ≈1.05（贴图比例 2.4668）
- *   bear         总宽 0.400 → halfWidth 0.2000，高 ≈0.53（贴图比例 0.7484）
- *   bag          总宽 0.600 → halfWidth 0.3000，高 ≈0.56（贴图比例 1.0675）
+ *   roomBg       总宽 3.250 → 高 ≈1.79（贴图比例 1.8115）
+ *   zunyi_*      总宽 3.250 → 高 ≈1.83（四层同为 1671×941，比例 1.776）
+ *   building     总宽 3.250 → 高 ≈1.59（贴图比例 2.0455）
+ *   bear         总宽 0.400 → 高 ≈0.53（贴图比例 0.7484）
  *
- * z 是折缝在页面上的前后位置：室外建筑在最前（z=0），
- * 熊站在它前面（z=0.3），避免和建筑正面穿模；
- * 室内的“墙”放在页面后半段（负 z），群像居中，背包最靠近读者。
+ * z 是折缝在页面上的前后位置：
+ *   室内按「人群 → 木箱 → 火炉 → 书包」从 -0.4 递增到 0.4，
+ *   四层画框完全对齐，只靠 z 轴产生景深和遮挡；
+ *   室外建筑在 z=0，熊在 z=0.3，避免和建筑正面穿模。
  *
  * offsetX 是整组纸板沿书本 X 轴的横向偏移，负数 = 向画面左侧移动。
  */
 const POPUP_LAYERS: PopUpLayerConfig[] = [
-  // 室内：背景墙最后、群像居中、背包最前
+  // 室内：背景墙最后，四层场景由远及近依次叠放
   {
     id: 'roomBg',
     scene: 'inside',
-    z: -0.5,
-    halfWidth: (PAGE_W / 2) * POPUP_SPREAD_SCALE,
-    angle: 0.38,
+    z: -0.6,
+    halfWidth: ZUNYI_LAYER_HALF_WIDTH,
+    angle: 0.3,
     fold: 'in', // 背景幕布：向外张开，包住整个跨页
   },
   {
-    id: 'meetingRoom',
+    id: 'zunyi_people',
     scene: 'inside',
-    z: -0.3,
-    halfWidth: ((PAGE_W * 0.8) / 2) * POPUP_SPREAD_SCALE,
-    angle: 0.34,
+    z: -0.3, // 最靠后：开会的人群
+    halfWidth: ZUNYI_LAYER_HALF_WIDTH,
+    angle: 0.32,
     fold: 'in',
   },
   {
-    id: 'bag',
+    id: 'zunyi_crates',
     scene: 'inside',
-    z: 0.32,
-    halfWidth: 0.15 * POPUP_SPREAD_SCALE,
+    z: 0.1, // 中景：木箱
+    halfWidth: ZUNYI_LAYER_HALF_WIDTH,
+    angle: 0.3,
+    fold: 'in',
+  },
+  {
+    id: 'zunyi_stove',
+    scene: 'inside',
+    z: 0.4, // 前景：火炉
+    halfWidth: ZUNYI_LAYER_HALF_WIDTH,
+    angle: 0.05,
+    fold: 'out',
+  },
+  {
+    id: 'zunyi_bag',
+    scene: 'inside',
+    z: 0.2, // 最靠前：书包压着箱子
+    halfWidth: ZUNYI_LAYER_HALF_WIDTH,
     angle: 0.26,
     fold: 'out',
   },
@@ -750,10 +819,23 @@ const POPUP_LAYERS: PopUpLayerConfig[] = [
   },
 ];
 
+interface CutoutBounds {
+  /** 可见内容在贴图中的归一化包围盒（0~1，x 向右，y 向上） */
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
 interface CutoutTexture {
   texture: THREE.Texture;
-  /** 裁掉黑边后的宽高比 */
+  /** 贴图画面的宽高比（裁切后或完整画框） */
   aspect: number;
+  /**
+   * 可见内容的归一化范围。
+   * 点击拾取只覆盖这一块，避免整张透明画框挡住前后的其他图层。
+   */
+  content: CutoutBounds;
 }
 
 /**
@@ -794,6 +876,30 @@ function createPanelGeometry(
   return geometry;
 }
 
+/**
+ * 点击拾取几何：只覆盖可见内容的包围盒，而不是整张透明画框。
+ *
+ * 室内四层共用同尺寸的整幅画框，并且几乎完全重叠；
+ * 如果直接拿画框做 raycast，最前面的图层会把所有点击都吃掉，
+ * 点人群也会弹出「随时待命的行囊」。
+ * 用内容包围盒后，木箱 / 火炉 / 书包各自只在自己的可见范围内响应，
+ * 透明区域会穿过前面的层，继续命中后面的人群。
+ *
+ * 该几何挂在一块 visible = false 的材质上：WebGL 不渲染它，
+ * 但 Raycaster 只检查几何体，点击仍然正常命中。
+ */
+function createHitGeometry(
+  x0: number,
+  x1: number,
+  y0: number,
+  y1: number,
+) {
+  if (x1 - x0 < 1e-4 || y1 - y0 < 1e-4) return null;
+  const geometry = new THREE.PlaneGeometry(x1 - x0, y1 - y0, 1, 1);
+  geometry.translate((x0 + x1) / 2, (y0 + y1) / 2, 0);
+  return geometry;
+}
+
 interface CardMaterials {
   /** 正面：印刷画面，alpha 抠图 */
   front: THREE.MeshBasicMaterial;
@@ -815,8 +921,16 @@ interface CardMaterials {
 /** 纸芯层不参与拾取，只负责从侧面看时露出纸板边 */
 const NO_RAYCAST = () => {};
 
+/**
+ * 只负责点击拾取的材质：visible = false 时 WebGL 不提交渲染，
+ * 但 Raycaster 只检查几何体，命中判断照常工作。
+ */
+const HIT_MATERIAL = new THREE.MeshBasicMaterial({ visible: false });
+
 interface CardHalfProps {
   geometry: THREE.BufferGeometry;
+  /** 可见内容的包围盒，透明区域不拦截点击；null 表示这一半没有内容 */
+  hitGeometry: THREE.BufferGeometry | null;
   materials: CardMaterials;
   /** 由父级 useFrame 每帧写入 matrix */
   groupRef: (node: THREE.Group | null) => void;
@@ -835,6 +949,7 @@ interface CardHalfProps {
  */
 function CardHalf({
   geometry,
+  hitGeometry,
   materials,
   groupRef,
   interactive,
@@ -847,10 +962,18 @@ function CardHalf({
       <mesh
         geometry={geometry}
         material={materials.front}
-        onPointerOver={interactive ? onPointerOver : undefined}
-        onPointerOut={interactive ? onPointerOut : undefined}
-        onClick={interactive ? onClick : undefined}
+        raycast={NO_RAYCAST}
       />
+      {/* 拾取层：不可见，但只在非透明内容的包围盒内响应 */}
+      {interactive && hitGeometry && (
+        <mesh
+          geometry={hitGeometry}
+          material={HIT_MATERIAL}
+          onPointerOver={onPointerOver}
+          onPointerOut={onPointerOut}
+          onClick={onClick}
+        />
+      )}
       {Array.from({ length: CARD_LAYERS }, (_, index) => (
         <mesh
           key={index}
@@ -886,10 +1009,15 @@ function loadImageElement(url: string): Promise<HTMLImageElement> {
  * 1. 从四边向内做泛洪填充，把和画布边缘连通的近黑像素设为透明。
  *    （JPG 没有 alpha，alphaTest 对纯黑底无效，这一步才是真正去掉黑底；
  *     泛洪而不是全局阈值，是为了保留熊的黑框眼镜、画里的黑色阴影等内部黑色。）
- * 2. 按非透明内容的包围盒裁切，plane 尺寸与真实画面一致，点击区域也更精准。
+ * 2. preserveFrame 为 false 时，按非透明内容的包围盒裁切，
+ *    plane 尺寸与真实画面一致，点击区域也更精准；
+ *    preserveFrame 为 true 时保留完整画框，供分层场景图对齐叠放。
  * 3. 输出 CanvasTexture，材质端继续使用 transparent + alphaTest 0.1。
  */
-function createCutoutTexture(image: HTMLImageElement): CutoutTexture {
+function createCutoutTexture(
+  image: HTMLImageElement,
+  preserveFrame = false,
+): CutoutTexture {
   const width = image.naturalWidth;
   const height = image.naturalHeight;
   const canvas = document.createElement('canvas');
@@ -964,34 +1092,56 @@ function createCutoutTexture(image: HTMLImageElement): CutoutTexture {
   }
 
   const hasContent = maxX >= 0 && maxY >= 0;
-  const cropX = hasContent ? minX : 0;
-  const cropY = hasContent ? minY : 0;
-  const cropW = hasContent ? maxX - minX + 1 : width;
-  const cropH = hasContent ? maxY - minY + 1 : height;
 
-  const croppedCanvas = document.createElement('canvas');
-  croppedCanvas.width = cropW;
-  croppedCanvas.height = cropH;
-  const croppedCtx = croppedCanvas.getContext('2d');
-  if (!croppedCtx) throw new Error('[popup] Canvas 2D context unavailable');
-  croppedCtx.drawImage(
-    canvas,
-    cropX,
-    cropY,
-    cropW,
-    cropH,
-    0,
-    0,
-    cropW,
-    cropH,
-  );
+  let textureCanvas: HTMLCanvasElement = canvas;
+  let aspect = width / height;
+  // 默认认为内容铺满画布；只有 preserveFrame 才需要记录真实内容范围。
+  // 裁切模式下画布本身就是内容的包围盒，所以 0~1 仍然成立。
+  let content: CutoutBounds = { x0: 0, y0: 0, x1: 1, y1: 1 };
 
-  const texture = new THREE.CanvasTexture(croppedCanvas);
+  if (preserveFrame) {
+    if (hasContent) {
+      // 画布 y 轴向下，纹理 v 轴向上，所以 y 要翻转
+      content = {
+        x0: minX / width,
+        y0: 1 - (maxY + 1) / height,
+        x1: (maxX + 1) / width,
+        y1: 1 - minY / height,
+      };
+    }
+  } else {
+    const cropX = hasContent ? minX : 0;
+    const cropY = hasContent ? minY : 0;
+    const cropW = hasContent ? maxX - minX + 1 : width;
+    const cropH = hasContent ? maxY - minY + 1 : height;
+
+    const croppedCanvas = document.createElement('canvas');
+    croppedCanvas.width = cropW;
+    croppedCanvas.height = cropH;
+    const croppedCtx = croppedCanvas.getContext('2d');
+    if (!croppedCtx) throw new Error('[popup] Canvas 2D context unavailable');
+    croppedCtx.drawImage(
+      canvas,
+      cropX,
+      cropY,
+      cropW,
+      cropH,
+      0,
+      0,
+      cropW,
+      cropH,
+    );
+
+    textureCanvas = croppedCanvas;
+    aspect = cropW / cropH;
+  }
+
+  const texture = new THREE.CanvasTexture(textureCanvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
   texture.needsUpdate = true;
 
-  return { texture, aspect: cropW / cropH };
+  return { texture, aspect, content };
 }
 
 function usePopUpTextures() {
@@ -1026,7 +1176,10 @@ function usePopUpTextures() {
       }
 
       try {
-        return [id, createCutoutTexture(image)] as const;
+        return [
+          id,
+          createCutoutTexture(image, source.preserveFrame),
+        ] as const;
       } catch (error) {
         console.warn('[popup] 抠图处理失败，对应机关将保持隐藏', error);
         return null;
@@ -1165,18 +1318,45 @@ function PopUpScene({
     const map: Partial<
       Record<
         PopUpLayerId,
-        { left: THREE.BufferGeometry; right: THREE.BufferGeometry }
+        {
+          left: THREE.BufferGeometry;
+          right: THREE.BufferGeometry;
+          hitLeft: THREE.BufferGeometry | null;
+          hitRight: THREE.BufferGeometry | null;
+        }
       >
     > = {};
     POPUP_LAYERS.forEach((layer) => {
       const cutout = textures[layer.id];
       if (!cutout) return;
       const height = popUpHeight(layer, cutout);
+      const fullWidth = layer.halfWidth * 2;
+
+      // 内容包围盒从「整幅画框的归一化坐标」换算到纸板局部坐标：
+      // x ∈ [-halfWidth, +halfWidth]，y ∈ [0, height]。
+      const contentX0 = -layer.halfWidth + cutout.content.x0 * fullWidth;
+      const contentX1 = -layer.halfWidth + cutout.content.x1 * fullWidth;
+      const contentY0 = cutout.content.y0 * height;
+      const contentY1 = cutout.content.y1 * height;
+
       map[layer.id] = {
         // 左半：外缘 x=-w → u=0，书脊 x=0 → u=0.5
         left: createPanelGeometry(-layer.halfWidth, 0, height, 0, 0.5),
         // 右半：书脊 x=0 → u=0.5，外缘 x=+w → u=1
         right: createPanelGeometry(0, layer.halfWidth, height, 0.5, 1),
+        // 拾取几何按内容包围盒裁到左右两半，透明部分不挡点击
+        hitLeft: createHitGeometry(
+          Math.max(-layer.halfWidth, contentX0),
+          Math.min(0, contentX1),
+          contentY0,
+          contentY1,
+        ),
+        hitRight: createHitGeometry(
+          Math.max(0, contentX0),
+          Math.min(layer.halfWidth, contentX1),
+          contentY0,
+          contentY1,
+        ),
       };
     });
     return map;
@@ -1187,6 +1367,8 @@ function PopUpScene({
       Object.values(panels).forEach((panel) => {
         panel?.left.dispose();
         panel?.right.dispose();
+        panel?.hitLeft?.dispose();
+        panel?.hitRight?.dispose();
       });
     },
     [panels],
@@ -1556,6 +1738,7 @@ function PopUpScene({
           >
             <CardHalf
               geometry={panel.left}
+              hitGeometry={panel.hitLeft}
               materials={card}
               groupRef={cardSetters[leftKey]}
               interactive={interactive}
@@ -1565,6 +1748,7 @@ function PopUpScene({
             />
             <CardHalf
               geometry={panel.right}
+              hitGeometry={panel.hitRight}
               materials={card}
               groupRef={cardSetters[rightKey]}
               interactive={interactive}
@@ -1604,7 +1788,8 @@ function OrbitRig() {
       zoomSpeed={0.7}
       minDistance={3}
       maxDistance={10}
-      target={[SPREAD_CENTER_X * bookScale, 0.02, 0]}
+      maxPolarAngle={Math.PI / 2.1} // 👈 极其重要：这行代码禁止了镜头从正上方俯视，强制把视角压平！
+      target={[SPREAD_CENTER_X * bookScale, 0.3, 0]} // 👈 把 Y 轴（中间那个 0.02）改成 -0.5，把书拉回画面中央！
     />
   );
 }
