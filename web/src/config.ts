@@ -11,18 +11,19 @@ export const SITE = {
 } as const;
 
 /**
- * 章节 id。zunyi / xiangjiang / luding / snow / hada 已经接入 3D 书本场景，
- * 其余章节保留在导航里，状态为 soon。
+ * 章节 id。zunyi / xiangjiang / tongdao / chishui / luding / snow / hada /
+ * huishi 已经接入 3D 书本场景，其余章节保留在导航里，状态为 soon。
  */
 export type ChapterId =
   | 'zunyi'
   | 'xiangjiang'
+  | 'tongdao'
   | 'chishui'
   | 'jinsha'
   | 'luding'
   | 'snow'
   | 'hada'
-  | 'join';
+  | 'huishi';
 
 /** active = 已接入，可点击阅读；soon = 筹备中，导航置灰 */
 export type ChapterStatus = 'active' | 'soon';
@@ -37,11 +38,12 @@ export interface Chapter {
 export const CHAPTERS: Chapter[] = [
   { id: 'zunyi', index: '01', title: '遵义会议', status: 'active' },
   { id: 'xiangjiang', index: '02', title: '湘江血战', status: 'active' },
-  { id: 'jinsha', index: '03', title: '巧渡金沙江', status: 'soon' },
-  { id: 'luding', index: '04', title: '飞夺泸定桥', status: 'active' },
-  { id: 'snow', index: '05', title: '雪山草地', status: 'active' },
-  { id: 'hada', index: '06', title: '哈达铺', status: 'active' },
-  { id: 'join', index: '07', title: '会师陕北', status: 'soon' },
+  { id: 'tongdao', index: '03', title: '通道会议', status: 'active' },
+  { id: 'chishui', index: '04', title: '四渡赤水', status: 'active' },
+  { id: 'luding', index: '05', title: '飞夺泸定桥', status: 'active' },
+  { id: 'snow', index: '06', title: '雪山草地', status: 'active' },
+  { id: 'hada', index: '07', title: '哈达铺', status: 'active' },
+  { id: 'huishi', index: '08', title: '三军会师', status: 'active' },
 ];
 
 export interface ChapterMeta {
@@ -82,9 +84,27 @@ export const CHAPTER_META: Partial<Record<ChapterId, ChapterMeta>> = {
     location: '广西 · 湘江',
     tagline: '向死而生的绝命后卫',
   },
-  luding: {
+  tongdao: {
+    index: '第三章',
+    number: 'CHAPTER 03',
+    chapter: '通道会议',
+    chapterEn: 'THE TONGDAO MEETING',
+    date: '1934.12.12',
+    location: '湖南 · 通道',
+    tagline: '转兵贵州，绝处逢生',
+  },
+  chishui: {
     index: '第四章',
     number: 'CHAPTER 04',
+    chapter: '四渡赤水',
+    chapterEn: 'FOUR CROSSINGS OF THE CHISHUI RIVER',
+    date: '1935.01 — 03',
+    location: '贵州 · 赤水河',
+    tagline: '运动战的巅峰',
+  },
+  luding: {
+    index: '第五章',
+    number: 'CHAPTER 05',
     chapter: '飞夺泸定桥',
     chapterEn: 'THE FLYING CAPTURE OF LUDING BRIDGE',
     date: '1935.05.29',
@@ -92,8 +112,8 @@ export const CHAPTER_META: Partial<Record<ChapterId, ChapterMeta>> = {
     tagline: '二十二勇士的生死突击',
   },
   snow: {
-    index: '第五章',
-    number: 'CHAPTER 05',
+    index: '第六章',
+    number: 'CHAPTER 06',
     chapter: '雪山草地',
     chapterEn: 'SNOW MOUNTAINS AND GRASSLANDS',
     date: '1935.06 — 08',
@@ -101,13 +121,22 @@ export const CHAPTER_META: Partial<Record<ChapterId, ChapterMeta>> = {
     tagline: '生命极限的远征',
   },
   hada: {
-    index: '第六章',
-    number: 'CHAPTER 06',
+    index: '第七章',
+    number: 'CHAPTER 07',
     chapter: '哈达铺',
     chapterEn: 'HADAPU',
     date: '1935.09',
     location: '甘肃 · 哈达铺',
     tagline: '一张报纸定方向',
+  },
+  huishi: {
+    index: '第八章',
+    number: 'CHAPTER 08',
+    chapter: '三军会师',
+    chapterEn: 'JOINING OF THE THREE MAIN FORCES',
+    date: '1936.10',
+    location: '甘肃 · 会宁',
+    tagline: '长征胜利结束',
   },
 };
 

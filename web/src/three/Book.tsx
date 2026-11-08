@@ -206,24 +206,46 @@ const SNOW_ENDPAPER_COLOR = '#b9cddf';
  *   · hada       哈达铺 —— 旧报纸
  *   · luding     飞夺泸定桥 —— 咆哮的大渡河
  *   · xiangjiang 湘江血战 —— 被鲜血染红的江水
+ *   · tongdao    通道会议 —— 做旧地图
+ *   · chishui    四渡赤水 —— 赤水河与两岸山野
  */
 const CHAPTER_PAPER_URLS: Partial<Record<ChapterId, string>> = {
   hada: '/book/hada_news.jpg',
   luding: '/book/ld_river.png',
   xiangjiang: '/book/xj_river.jpg',
+  tongdao: '/book/td_map.png',
+  chishui: '/book/cs_map.jpg',
 };
+
+/**
+ * 需要「跨页拼图」而不是「单页裁切」的底图。
+ *
+ * 通道会议的地图是一整张横图，中间本来就有折痕：
+ * 左右两页各取一半，沿书脊拼回完整的一张地图，
+ * 折痕正好落在书缝上。
+ * 四渡赤水的赤水河同样是一整幅蜿蜒的横图，拼回去才是一条完整的河。
+ * 其余章节的底图仍然左右各铺一张。
+ */
+const SPREAD_PAPER_URLS = new Set<string>([
+  '/book/td_map.png',
+  '/book/cs_map.jpg',
+]);
 
 interface ChapterPaper {
   url: string;
-  texture: THREE.Texture;
+  /** 左页（封面内衬）使用的贴图 */
+  left: THREE.Texture;
+  /** 右页（页块第一张纸）使用的贴图 */
+  right: THREE.Texture;
 }
 
 /**
  * 加载当前章节的内页底图。
  *
  * 底图是 1672×941 的横图，书页是竖版；直接铺满会把画面压扁。
- * 这里按 CSS `cover` 的思路只取中间一条竖幅（约 40% 宽度），
- * 让底图以正常比例铺满左右两页。
+ * 默认按 CSS `cover` 的思路只取中间一条竖幅（约 40% 宽度），
+ * 让底图以正常比例铺满左右两页；跨页地图（SPREAD_PAPER_URLS）
+ * 则左右各取一半，沿书脊拼回完整的一张。
  */
 function useChapterPaperTexture(chapter: ChapterId) {
   const url = CHAPTER_PAPER_URLS[chapter] ?? null;
@@ -233,18 +255,35 @@ function useChapterPaperTexture(chapter: ChapterId) {
     if (!url) return;
 
     let cancelled = false;
-    let loaded: THREE.Texture | null = null;
+    const loaded: THREE.Texture[] = [];
 
     new THREE.TextureLoader().load(
       url,
       (next) => {
-        loaded = next;
+        loaded.push(next);
         if (cancelled) return;
 
         next.colorSpace = THREE.SRGBColorSpace;
         next.anisotropy = 8;
         next.wrapS = THREE.ClampToEdgeWrapping;
         next.wrapT = THREE.ClampToEdgeWrapping;
+
+        if (SPREAD_PAPER_URLS.has(url)) {
+          // 跨页地图：右页从书脊向外采样原图右半，左页采样左半。
+          // 左页纸面的 u 轴从外缘指向书脊，所以直接用 0 → 0.5。
+          next.repeat.set(0.5, 1);
+          next.offset.set(0.5, 0);
+          next.needsUpdate = true;
+
+          const left = next.clone();
+          left.repeat.set(0.5, 1);
+          left.offset.set(0, 0);
+          left.needsUpdate = true;
+          loaded.push(left);
+
+          setPaper({ url, left, right: next });
+          return;
+        }
 
         const image = next.image as { width?: number; height?: number } | null;
         const imageAspect =
@@ -255,7 +294,7 @@ function useChapterPaperTexture(chapter: ChapterId) {
         next.offset.set((1 - visible) / 2, 0);
         next.needsUpdate = true;
 
-        setPaper({ url, texture: next });
+        setPaper({ url, left: next, right: next });
       },
       undefined,
       () => {
@@ -265,13 +304,13 @@ function useChapterPaperTexture(chapter: ChapterId) {
 
     return () => {
       cancelled = true;
-      loaded?.dispose();
+      loaded.forEach((texture) => texture.dispose());
     };
   }, [url]);
 
   // 用 url 比对，避免切换到另一个有底图的章节时，
   // 在新图加载完成前闪一帧上一章的底图。
-  return paper && paper.url === url ? paper.texture : null;
+  return paper && paper.url === url ? paper : null;
 }
 
 function BookModel({
@@ -283,7 +322,7 @@ function BookModel({
   openRef,
   onOpenDialog,
 }: BookModelProps) {
-  /** 章节专属的平铺内页（哈达铺报纸 / 泸定桥江水）；其余章节为 null */
+  /** 章节专属的平铺内页（报纸 / 江水 / 地图）；其余章节为 null */
   const pagePaper = useChapterPaperTexture(chapter);
   const starGeometry = useMemo(() => createStarGeometry(1, 0.42, 0.06), []);
   const cornerGeometry = useMemo(
@@ -337,7 +376,8 @@ function BookModel({
     // 其余章节继续使用生成好的纸纹贴图。
     const snowChapter = chapter === 'snow';
 
-    // 哈达铺 / 飞夺泸定桥：左右两页都平铺同一张章节底图（按竖幅裁切）。
+    // 章节平铺底图（报纸 / 江水 / 地图）：左右两页各用一张贴图，
+    // 跨页地图的两半在书脊处拼回整张。
     // 用 MeshBasicMaterial 避免室内暖光把画面染成米黄色。
     const firstPage = snowChapter
       ? new THREE.MeshBasicMaterial({
@@ -346,7 +386,7 @@ function BookModel({
         })
       : pagePaper
         ? new THREE.MeshBasicMaterial({
-            map: pagePaper,
+            map: pagePaper.right,
             toneMapped: false,
           })
         : new THREE.MeshStandardMaterial({
@@ -365,7 +405,7 @@ function BookModel({
         })
       : pagePaper
         ? new THREE.MeshBasicMaterial({
-            map: pagePaper,
+            map: pagePaper.left,
             toneMapped: false,
           })
         : new THREE.MeshStandardMaterial({
@@ -474,17 +514,18 @@ function BookModel({
     };
   }, [textures, chapter, pagePaper]);
 
-  // 湘江血战：血水铺满左右两页，点击任何一处页纸都算点击底图。
+  // 湘江血水 / 通道地图铺满左右两页，点击任何一处页纸都算点击底图。
   // 其余章节不挂这些处理，保持原来的纯展示行为。
-  const paperInteractive = chapter === 'xiangjiang';
+  const paperDialog = PAPER_CLICK_DIALOGS[chapter];
+  const paperInteractive = Boolean(paperDialog);
 
   const handlePaperClick = (event: ThreeEvent<MouseEvent>) => {
-    if (!paperInteractive) return;
+    if (!paperDialog) return;
     // 书没完全展开 / 正在拖拽旋转视角时不响应
     if (openRef.current < 0.995) return;
     if ((event.delta ?? 0) > 5) return;
     event.stopPropagation();
-    onOpenDialog(XJ_RIVER_DIALOG.title, XJ_RIVER_DIALOG.content);
+    onOpenDialog(paperDialog.title, paperDialog.content);
   };
 
   const handlePaperOver = (event: ThreeEvent<PointerEvent>) => {
@@ -668,9 +709,12 @@ type PopUpSceneId =
   | 'outside'
   | 'inside'
   | 'xiangjiang'
+  | 'tongdao'
+  | 'chishui'
   | 'luding'
   | 'snow'
-  | 'hada';
+  | 'hada'
+  | 'huishi';
 type PopUpLayerId =
   | 'building'
   | 'bear'
@@ -682,6 +726,12 @@ type PopUpLayerId =
   | 'xj_rearguard'
   | 'xj_shore'
   | 'xj_bear'
+  | 'td_people_left'
+  | 'td_people_right'
+  | 'td_bear'
+  | 'cs_mountain_left'
+  | 'cs_mountain_right'
+  | 'cs_telegram'
   | 'ld_bridge'
   | 'ld_anchor_left'
   | 'ld_anchor_right'
@@ -696,7 +746,10 @@ type PopUpLayerId =
   | 'item_hook'
   | 'item_matches'
   | 'hada_news'
-  | 'hada_bear';
+  | 'hada_bear'
+  | 'hs_gate'
+  | 'hs_hug'
+  | 'hs_bear';
 type PopUpHalfSide = 'left' | 'right';
 type PopUpFold = 'in' | 'out';
 
@@ -836,6 +889,29 @@ const POPUP_SOURCES: Record<PopUpLayerId, PopUpSource> = {
   xj_bear: {
     url: '/book/xj_bear.jpg',
   },
+  // 通道会议：地图已经改为平铺在书页上的底图（见 CHAPTER_PAPER_URLS），
+  // 两侧指路 / 争论的人物和拿纸条的熊都是黑底单物件，按内容裁切。
+  td_people_left: {
+    url: '/book/td_people_left.jpg',
+  },
+  td_people_right: {
+    url: '/book/td_people_right.jpg',
+  },
+  td_bear: {
+    url: '/book/td_bear.jpg',
+  },
+  // 四渡赤水：赤水河已经改为平铺在书页上的底图（见 CHAPTER_PAPER_URLS），
+  // 左右两座山和急电都是黑底单物件，按非透明内容裁切，
+  // 分别立在两页外侧和两山之间的前景。
+  cs_mountain_left: {
+    url: '/book/cs_mountain_left.jpg',
+  },
+  cs_mountain_right: {
+    url: '/book/cs_mountain_right.jpg',
+  },
+  cs_telegram: {
+    url: '/book/cs_telegram.jpg',
+  },
   // 飞夺泸定桥：江水已经改为平铺在书页上的底图（见 CHAPTER_PAPER_URLS），
   // 不再作为立体图层；铁链和战士保留整幅画框。
   // 左右桥台 / 小船 / 水花都是黑底单物件，按非透明内容裁切，
@@ -900,6 +976,17 @@ const POPUP_SOURCES: Record<PopUpLayerId, PopUpSource> = {
   hada_bear: {
     url: '/book/hada_bear.jpg',
   },
+  // 三军会师：城楼 / 拥抱群像 / 老陈都是黑底单物件，
+  // 按非透明内容裁切后立在不同深度上。
+  hs_gate: {
+    url: '/book/hs_gate.jpg',
+  },
+  hs_hug: {
+    url: '/book/hs_hug.jpg',
+  },
+  hs_bear: {
+    url: '/book/hs_bear.jpg',
+  },
 };
 
 interface PopUpDialog {
@@ -947,6 +1034,34 @@ const POPUP_DIALOGS: Partial<Record<PopUpLayerId, PopUpDialog>> = {
     title: '老陈的眼泪',
     content:
       '老陈捂着脸，泣不成声：“八万六千人啊……过了江，就只剩三万了……”',
+  },
+  td_people_left: {
+    title: '改变既定方针',
+    content:
+      '“不能去湘西！那是往敌人的火坑里跳！我们应该改向敌人力量薄弱的贵州进军！”',
+  },
+  td_people_right: {
+    title: '激烈的争论',
+    content: '“可是这是中央定下的计划，说改就改，哪有那么容易？”',
+  },
+  td_bear: {
+    title: '老陈的担忧',
+    content: '老陈凑过来低声说：“同志，大家意见不一，咱们到底听谁的？”',
+  },
+  cs_mountain_left: {
+    title: '运动战的巅峰',
+    content:
+      '娄山关大捷，长征以来的最大胜利！红军在崇山峻岭间如神兵天降，硬是在绝境中杀出了一条血路。',
+  },
+  cs_mountain_right: {
+    title: '运动战的巅峰',
+    content:
+      '娄山关大捷，长征以来的最大胜利！红军在崇山峻岭间如神兵天降，硬是在绝境中杀出了一条血路。',
+  },
+  cs_telegram: {
+    title: '敌情万变',
+    content:
+      '侦察参谋递来急电：“敌军又追来了！”但这一次，他们连我们的尾灯都看不见！',
   },
   ld_bridge: {
     title: '血肉铸就的通道',
@@ -1018,16 +1133,45 @@ const POPUP_DIALOGS: Partial<Record<PopUpLayerId, PopUpDialog>> = {
     content:
       '报纸上印着：“朱毛残部流窜川康，已溃不成军。”但这上面，藏着决定红军命运的情报。',
   },
+  hs_gate: {
+    title: '会师楼',
+    content:
+      '1936年10月，甘肃会宁。这座明代古城门，见证了红军三大主力的历史性会合。',
+  },
+  hs_hug: {
+    title: '胜利的拥抱',
+    content:
+      '两万五千里跋涉，无数战友牺牲。此刻，他们终于紧紧拥抱在一起，宣告长征胜利结束！',
+  },
+  hs_bear: {
+    title: '跨越时空的迎接',
+    content:
+      '老陈站在城门前，张开双臂迎接你：“同志，我们走完了！这盛世，如你们所愿！”',
+  },
 };
 
 /**
- * 湘江的血水是平铺在书页上的底图（见 CHAPTER_PAPER_URLS），
- * 没有立体纸板可以挂弹窗，所以让左右两页纸面本身承担这一条点击。
+ * 平铺底图的弹窗。
+ *
+ * 湘江血水、通道地图都直接铺在书页上（见 CHAPTER_PAPER_URLS），
+ * 没有立体纸板可以挂点击，所以让左右两页纸面本身承担这一条交互。
  */
-const XJ_RIVER_DIALOG: PopUpDialog = {
-  title: '血染湘江',
-  content:
-    '冰冷的江水被鲜血染成了红色。数万红军将士的英魂，永远留在了这里。',
+const PAPER_CLICK_DIALOGS: Partial<Record<ChapterId, PopUpDialog>> = {
+  xiangjiang: {
+    title: '血染湘江',
+    content:
+      '冰冷的江水被鲜血染成了红色。数万红军将士的英魂，永远留在了这里。',
+  },
+  tongdao: {
+    title: '生死抉择',
+    content:
+      '原计划是去湘江与红二、六军团会合，但敌人的口袋阵已经张开了。现在，必须找出一条生路。',
+  },
+  chishui: {
+    title: '生死交织的赤水河',
+    content:
+      '一渡、二渡、三渡、四渡！红军在湍急的赤水河上反复穿插，将蒋介石的几十万大军彻底绕晕！',
+  },
 };
 
 interface PopUpLayerConfig {
@@ -1170,6 +1314,64 @@ const POPUP_LAYERS: PopUpLayerConfig[] = [
     angle: 0.2,
     fold: 'out',
   },
+  // 通道会议：地图已经平铺在书页上（见 CHAPTER_PAPER_URLS），
+  // 左侧指路人物与右侧争论人物分列两页，拿纸条的熊站在正中前方。
+  {
+    id: 'td_people_left',
+    scene: 'tongdao',
+    z: 0,
+    halfWidth: 0.5,
+    offsetX: -0.7,
+    angle: 0.25,
+    fold: 'out',
+  },
+  {
+    id: 'td_people_right',
+    scene: 'tongdao',
+    z: 0,
+    halfWidth: 0.38,
+    offsetX: 0.8,
+    angle: 0.25,
+    fold: 'out',
+  },
+  {
+    id: 'td_bear',
+    scene: 'tongdao',
+    z: 0.3,
+    halfWidth: 0.2,
+    offsetX: 0,
+    angle: 0.2,
+    fold: 'out',
+  },
+  // 四渡赤水：赤水河已经平铺在书页上（见 CHAPTER_PAPER_URLS），
+  // 两座山分立左右夹出峡谷纵深，急电压在两山之间的前景。
+  {
+    id: 'cs_mountain_left',
+    scene: 'chishui',
+    z: -0.35,
+    halfWidth: 0.8,
+    offsetX: -0.7,
+    angle: 0.25,
+    fold: 'out',
+  },
+  {
+    id: 'cs_mountain_right',
+    scene: 'chishui',
+    z: 0.6,
+    halfWidth: 0.5,
+    offsetX: 0.85,
+    angle: 0.25,
+    fold: 'out',
+  },
+  {
+    id: 'cs_telegram',
+    scene: 'chishui',
+    z: 0.3,
+    halfWidth: 0.3,
+    offsetX: 0,
+    angle: 0.2,
+    fold: 'out',
+  },
   // 飞夺泸定桥：江水已经平铺在书页上（见 CHAPTER_PAPER_URLS），
   // 不再立起来；铁链与战士横跨跨页，
   // 左右桥台立在两页外侧，水花压在最前面，小船放在右下角。
@@ -1307,6 +1509,35 @@ const POPUP_LAYERS: PopUpLayerConfig[] = [
     z: 0.2,
     halfWidth: 0.2,
     offsetX: -0.4,
+    angle: 0.2,
+    fold: 'out',
+  },
+  // 三军会师：城楼用山谷折横跨整幅跨页作为最宏大的背景，
+  // 拥抱群像在左前，老陈在右前张开双臂。
+  {
+    id: 'hs_gate',
+    scene: 'huishi',
+    z: -0.4,
+    halfWidth: PAGE_W * 1.0,
+    offsetX: 0,
+    angle: 0.3,
+    fold: 'in',
+  },
+  {
+    id: 'hs_hug',
+    scene: 'huishi',
+    z: 0.2,
+    halfWidth: 0.6,
+    offsetX: -0.4,
+    angle: 0.25,
+    fold: 'out',
+  },
+  {
+    id: 'hs_bear',
+    scene: 'huishi',
+    z: 0.5,
+    halfWidth: 0.5,
+    offsetX: 0.5,
     angle: 0.2,
     fold: 'out',
   },
@@ -2004,7 +2235,13 @@ function PopUpScene({
           ? 'luding'
           : chapter === 'xiangjiang'
             ? 'xiangjiang'
-            : roomStage;
+            : chapter === 'tongdao'
+              ? 'tongdao'
+              : chapter === 'chishui'
+                ? 'chishui'
+                : chapter === 'huishi'
+                  ? 'huishi'
+                  : roomStage;
   const camera = useThree((state) => state.camera);
   const viewport = useThree((state) => state.size);
   const bookScale = viewport.width < viewport.height ? 0.52 : 1;
