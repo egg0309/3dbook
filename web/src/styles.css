@@ -280,16 +280,43 @@ button {
 }
 
 .chapter-rail li {
-  display: grid;
-  grid-template-columns: 24px 1fr auto;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 0;
   border-top: 1px solid var(--line);
   color: var(--paper-dim);
   font-size: 11px;
   letter-spacing: 0.12em;
   opacity: 0.52;
+}
+
+.rail-item {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+  /* overlay 默认 pointer-events: none，章节导航必须单独放行 */
+  pointer-events: auto;
+}
+
+.rail-item:disabled {
+  cursor: default;
+}
+
+.rail-item:focus-visible {
+  outline: 1px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.chapter-rail li[data-available="true"]:not([data-active="true"]):hover {
+  color: var(--paper);
+  opacity: 0.88;
 }
 
 .chapter-rail li[data-active="true"] {
@@ -376,6 +403,188 @@ button {
 
 .overlay[data-phase="open"] .journey-track {
   opacity: 0.35;
+}
+
+/* ---------------- 雪山拖拽提示 ---------------- */
+
+.snow-hint {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(92px, 12vh, 132px);
+  translate: -50% 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(560px, calc(100vw - 48px));
+  padding: 10px 20px;
+  border: 1px solid rgba(200, 164, 92, 0.45);
+  border-radius: 999px;
+  background: rgba(8, 12, 18, 0.5);
+  color: rgba(236, 240, 248, 0.92);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.34),
+    inset 0 0 22px rgba(170, 205, 255, 0.06);
+  pointer-events: none;
+  opacity: 1;
+  scale: 1;
+  animation:
+    snowHintIn 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    snowHintFloat 3.8s 0.55s ease-in-out infinite,
+    snowHintBreathe 3.8s 0.55s ease-in-out infinite;
+  transition:
+    opacity 0.42s ease,
+    scale 0.42s ease,
+    filter 0.42s ease;
+}
+
+.snow-hint[data-leaving="true"] {
+  opacity: 0;
+  scale: 0.94;
+  filter: blur(3px);
+}
+
+.snow-hint-icon {
+  font-size: 13px;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px rgba(200, 230, 255, 0.5));
+}
+
+@keyframes snowHintIn {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+/* 上下浮动：只动 translate，和淡出用的 opacity / scale 互不干扰 */
+@keyframes snowHintFloat {
+  0%,
+  100% {
+    translate: -50% 0;
+  }
+  50% {
+    translate: -50% -7px;
+  }
+}
+
+@keyframes snowHintBreathe {
+  0%,
+  100% {
+    border-color: rgba(200, 164, 92, 0.38);
+    box-shadow:
+      0 12px 36px rgba(0, 0, 0, 0.34),
+      0 0 0 rgba(170, 210, 255, 0);
+  }
+  50% {
+    border-color: rgba(214, 186, 128, 0.62);
+    box-shadow:
+      0 12px 36px rgba(0, 0, 0, 0.34),
+      0 0 26px rgba(170, 210, 255, 0.16);
+  }
+}
+
+/* ---------------- 哈达铺放大镜 ---------------- */
+
+.hada-hint {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(92px, 12vh, 132px);
+  z-index: 20;
+  translate: -50% 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(640px, calc(100vw - 48px));
+  padding: 10px 20px;
+  border: 1px solid rgba(200, 164, 92, 0.45);
+  border-radius: 999px;
+  background: rgba(20, 14, 8, 0.46);
+  color: rgba(242, 232, 210, 0.92);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.34),
+    inset 0 0 22px rgba(220, 182, 110, 0.08);
+  pointer-events: none;
+  animation:
+    snowHintIn 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    snowHintFloat 3.8s 0.55s ease-in-out infinite;
+}
+
+.hada-hint-icon {
+  font-size: 13px;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px rgba(230, 200, 140, 0.5));
+}
+
+/**
+ * 放大镜根节点：整张 1672×941 的木质放大镜 PNG。
+ * 透镜圆心在整张图的 (33%, 42.5%)，JS 会把这一点对准鼠标。
+ */
+.hada-magnifier {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  width: clamp(360px, 38vw, 620px);
+  aspect-ratio: 1672 / 941;
+  pointer-events: none;
+  opacity: 0;
+  scale: 0.94;
+  /* 缩放围绕透镜圆心，出现 / 消失时不会把镜片甩出去 */
+  transform-origin: 33% 42.5%;
+  transition:
+    opacity 0.18s ease,
+    scale 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+  filter: drop-shadow(0 20px 38px rgba(0, 0, 0, 0.42));
+  will-change: transform;
+}
+
+.hada-magnifier[data-visible="true"] {
+  opacity: 1;
+  scale: 1;
+}
+
+/**
+ * 镜片：和 PNG 圆洞对齐的圆形。
+ * 14.8% / 10.2% / 36.4% 都由 alpha 分析得到：
+ *   左 = 圆心 33% − 半径 18.2%
+ *   上 = 42.5% − 半径(以高度计) ≈ 10.2%
+ *   直径 = 2 × 18.2% = 36.4% 图宽
+ */
+.hada-magnifier-glass {
+  position: absolute;
+  left: 14.8%;
+  top: 10.2%;
+  width: 36.4%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background-repeat: no-repeat;
+  /* 屏幕尺寸 × 1.5；background-position 由 JS 每帧换算 */
+  background-size: 150vw 150vh;
+  background-color: #d9cfb9;
+  box-shadow:
+    inset 0 0 26px rgba(62, 42, 20, 0.4),
+    inset 0 0 4px rgba(255, 246, 225, 0.35);
+}
+
+.hada-magnifier-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
 }
 
 .action-bar {
@@ -952,6 +1161,32 @@ button {
   .journey-status {
     font-size: 9px;
     letter-spacing: 0.12em;
+  }
+
+  .snow-hint {
+    bottom: 132px;
+    max-width: calc(100vw - 40px);
+    padding: 9px 15px;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    line-height: 1.6;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .hada-hint {
+    bottom: 132px;
+    max-width: calc(100vw - 40px);
+    padding: 9px 15px;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    line-height: 1.6;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .hada-magnifier {
+    width: min(440px, 72vw);
   }
 
   .action-bar {

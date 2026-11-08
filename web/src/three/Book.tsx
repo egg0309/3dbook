@@ -14,13 +14,15 @@ import {
 } from '@react-three/fiber';
 import { OrbitControls, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
-import { BOOK_OPEN_DURATION } from '../config';
+import { BOOK_OPEN_DURATION, type ChapterId } from '../config';
 import {
   journeyProgress,
   markInteracted,
   setCinematic,
+  setDragging,
   setJourneyPhase,
   useJourneyState,
+  useOpenRequest,
   useResetToken,
   type JourneyPhase,
 } from '../journey';
@@ -176,19 +178,152 @@ function Emblem({ centerX, gold, red, starGeometry, back = false }: EmblemProps)
 
 interface BookModelProps {
   textures: BookTextures;
+  /** 当前章节：雪山草地使用冷色内页，其余章节沿用纸纹 */
+  chapter: ChapterId;
   coverHingeRef: RefObject<THREE.Group | null>;
   /** 左页页帧：挂在封面铰链上，供立体机关读取 matrixWorld */
   leftPageRef: RefObject<THREE.Object3D | null>;
   /** 右页页帧：固定在页块书脊上，供立体机关读取 matrixWorld */
   rightPageRef: RefObject<THREE.Object3D | null>;
+  /** 书本翻开进度：平铺底图的点击只在完全展开后生效 */
+  openRef: RefObject<number>;
+  /** 平铺底图（湘江血水）也能点开弹窗 */
+  onOpenDialog: (title: string, content: string) => void;
+}
+
+/**
+ * 雪山章节的内页纯色：冷白偏蓝，和雪山的阴影面呼应。
+ * 用 MeshBasicMaterial（不受暖色内灯影响），否则 #dbe5f0 会被
+ * 室内暖光染成米黄色，看不出换过背景。
+ */
+const SNOW_PAGE_COLOR = '#c8d8e8';
+const SNOW_ENDPAPER_COLOR = '#b9cddf';
+
+/**
+ * 章节专属的「平铺内页」底图。
+ *
+ * 这些图不参与立体机关（不立起来），而是直接铺在展开后的书页表面：
+ *   · hada       哈达铺 —— 旧报纸
+ *   · luding     飞夺泸定桥 —— 咆哮的大渡河
+ *   · xiangjiang 湘江血战 —— 被鲜血染红的江水
+ *   · tongdao    通道会议 —— 做旧地图
+ *   · chishui    四渡赤水 —— 赤水河与两岸山野
+ */
+const CHAPTER_PAPER_URLS: Partial<Record<ChapterId, string>> = {
+  hada: '/book/hada_news.jpg',
+  luding: '/book/ld_river.png',
+  xiangjiang: '/book/xj_river.jpg',
+  tongdao: '/book/td_map.png',
+  chishui: '/book/cs_map.jpg',
+};
+
+/**
+ * 需要「跨页拼图」而不是「单页裁切」的底图。
+ *
+ * 通道会议的地图是一整张横图，中间本来就有折痕：
+ * 左右两页各取一半，沿书脊拼回完整的一张地图，
+ * 折痕正好落在书缝上。
+ * 四渡赤水的赤水河同样是一整幅蜿蜒的横图，拼回去才是一条完整的河。
+ * 其余章节的底图仍然左右各铺一张。
+ */
+const SPREAD_PAPER_URLS = new Set<string>([
+  '/book/td_map.png',
+  '/book/cs_map.jpg',
+]);
+
+interface ChapterPaper {
+  url: string;
+  /** 左页（封面内衬）使用的贴图 */
+  left: THREE.Texture;
+  /** 右页（页块第一张纸）使用的贴图 */
+  right: THREE.Texture;
+}
+
+/**
+ * 加载当前章节的内页底图。
+ *
+ * 底图是 1672×941 的横图，书页是竖版；直接铺满会把画面压扁。
+ * 默认按 CSS `cover` 的思路只取中间一条竖幅（约 40% 宽度），
+ * 让底图以正常比例铺满左右两页；跨页地图（SPREAD_PAPER_URLS）
+ * 则左右各取一半，沿书脊拼回完整的一张。
+ */
+function useChapterPaperTexture(chapter: ChapterId) {
+  const url = CHAPTER_PAPER_URLS[chapter] ?? null;
+  const [paper, setPaper] = useState<ChapterPaper | null>(null);
+
+  useEffect(() => {
+    if (!url) return;
+
+    let cancelled = false;
+    const loaded: THREE.Texture[] = [];
+
+    new THREE.TextureLoader().load(
+      url,
+      (next) => {
+        loaded.push(next);
+        if (cancelled) return;
+
+        next.colorSpace = THREE.SRGBColorSpace;
+        next.anisotropy = 8;
+        next.wrapS = THREE.ClampToEdgeWrapping;
+        next.wrapT = THREE.ClampToEdgeWrapping;
+
+        if (SPREAD_PAPER_URLS.has(url)) {
+          // 跨页地图：右页从书脊向外采样原图右半，左页采样左半。
+          // 左页纸面的 u 轴从外缘指向书脊，所以直接用 0 → 0.5。
+          next.repeat.set(0.5, 1);
+          next.offset.set(0.5, 0);
+          next.needsUpdate = true;
+
+          const left = next.clone();
+          left.repeat.set(0.5, 1);
+          left.offset.set(0, 0);
+          left.needsUpdate = true;
+          loaded.push(left);
+
+          setPaper({ url, left, right: next });
+          return;
+        }
+
+        const image = next.image as { width?: number; height?: number } | null;
+        const imageAspect =
+          image?.width && image?.height ? image.width / image.height : 1.776;
+        const pageAspect = (W - 0.004) / (H - 0.004);
+        const visible = Math.min(1, pageAspect / imageAspect);
+        next.repeat.set(visible, 1);
+        next.offset.set((1 - visible) / 2, 0);
+        next.needsUpdate = true;
+
+        setPaper({ url, left: next, right: next });
+      },
+      undefined,
+      () => {
+        console.warn(`[book] 章节内页底图加载失败: ${url}`);
+      },
+    );
+
+    return () => {
+      cancelled = true;
+      loaded.forEach((texture) => texture.dispose());
+    };
+  }, [url]);
+
+  // 用 url 比对，避免切换到另一个有底图的章节时，
+  // 在新图加载完成前闪一帧上一章的底图。
+  return paper && paper.url === url ? paper : null;
 }
 
 function BookModel({
   textures,
+  chapter,
   coverHingeRef,
   leftPageRef,
   rightPageRef,
+  openRef,
+  onOpenDialog,
 }: BookModelProps) {
+  /** 章节专属的平铺内页（报纸 / 江水 / 地图）；其余章节为 null */
+  const pagePaper = useChapterPaperTexture(chapter);
   const starGeometry = useMemo(() => createStarGeometry(1, 0.42, 0.06), []);
   const cornerGeometry = useMemo(
     () => createCornerGeometry(0.165, 0.038, 0.012),
@@ -237,23 +372,50 @@ function BookModel({
       envMapIntensity: 0.32,
     });
 
-    const firstPage = new THREE.MeshStandardMaterial({
-      map: textures.firstPage,
-      bumpMap: textures.paper,
-      bumpScale: 0.0018,
-      roughness: 0.94,
-      metalness: 0,
-      envMapIntensity: 0.3,
-    });
+    // 雪山章节没有专门的内页图，按需求改用冷色纯色纸面；
+    // 其余章节继续使用生成好的纸纹贴图。
+    const snowChapter = chapter === 'snow';
 
-    const endpaper = new THREE.MeshStandardMaterial({
-      map: textures.endpaper,
-      bumpMap: textures.endpaper,
-      bumpScale: 0.0025,
-      roughness: 0.9,
-      metalness: 0,
-      envMapIntensity: 0.35,
-    });
+    // 章节平铺底图（报纸 / 江水 / 地图）：左右两页各用一张贴图，
+    // 跨页地图的两半在书脊处拼回整张。
+    // 用 MeshBasicMaterial 避免室内暖光把画面染成米黄色。
+    const firstPage = snowChapter
+      ? new THREE.MeshBasicMaterial({
+          color: new THREE.Color(SNOW_PAGE_COLOR),
+          toneMapped: false,
+        })
+      : pagePaper
+        ? new THREE.MeshBasicMaterial({
+            map: pagePaper.right,
+            toneMapped: false,
+          })
+        : new THREE.MeshStandardMaterial({
+            map: textures.firstPage,
+            bumpMap: textures.paper,
+            bumpScale: 0.0018,
+            roughness: 0.94,
+            metalness: 0,
+            envMapIntensity: 0.3,
+          });
+
+    const endpaper = snowChapter
+      ? new THREE.MeshBasicMaterial({
+          color: new THREE.Color(SNOW_ENDPAPER_COLOR),
+          toneMapped: false,
+        })
+      : pagePaper
+        ? new THREE.MeshBasicMaterial({
+            map: pagePaper.left,
+            toneMapped: false,
+          })
+        : new THREE.MeshStandardMaterial({
+            map: textures.endpaper,
+            bumpMap: textures.endpaper,
+            bumpScale: 0.0025,
+            roughness: 0.9,
+            metalness: 0,
+            envMapIntensity: 0.35,
+          });
 
     const coverArt = new THREE.MeshStandardMaterial({
       map: textures.coverArt,
@@ -350,7 +512,33 @@ function BookModel({
       ribbon,
       pageMaterials,
     };
-  }, [textures]);
+  }, [textures, chapter, pagePaper]);
+
+  // 湘江血水 / 通道地图铺满左右两页，点击任何一处页纸都算点击底图。
+  // 其余章节不挂这些处理，保持原来的纯展示行为。
+  const paperDialog = PAPER_CLICK_DIALOGS[chapter];
+  const paperInteractive = Boolean(paperDialog);
+
+  const handlePaperClick = (event: ThreeEvent<MouseEvent>) => {
+    if (!paperDialog) return;
+    // 书没完全展开 / 正在拖拽旋转视角时不响应
+    if (openRef.current < 0.995) return;
+    if ((event.delta ?? 0) > 5) return;
+    event.stopPropagation();
+    onOpenDialog(paperDialog.title, paperDialog.content);
+  };
+
+  const handlePaperOver = (event: ThreeEvent<PointerEvent>) => {
+    if (!paperInteractive || openRef.current < 0.995) return;
+    event.stopPropagation();
+    document.body.style.cursor = 'pointer';
+  };
+
+  const handlePaperOut = (event: ThreeEvent<PointerEvent>) => {
+    if (!paperInteractive) return;
+    event.stopPropagation();
+    document.body.style.cursor = '';
+  };
 
   return (
     <group>
@@ -399,6 +587,9 @@ function BookModel({
       <mesh
         position={[0, 0, PAGE_T / 2 + 0.0012]}
         material={materials.firstPage}
+        onClick={paperInteractive ? handlePaperClick : undefined}
+        onPointerOver={paperInteractive ? handlePaperOver : undefined}
+        onPointerOut={paperInteractive ? handlePaperOut : undefined}
       >
         <planeGeometry args={[PAGE_W - 0.004, PAGE_H - 0.004]} />
       </mesh>
@@ -466,6 +657,9 @@ function BookModel({
           position={[HALF_W, 0, -COVER / 2 - 0.0015]}
           rotation={[0, Math.PI, 0]}
           material={materials.endpaper}
+          onClick={paperInteractive ? handlePaperClick : undefined}
+          onPointerOver={paperInteractive ? handlePaperOver : undefined}
+          onPointerOut={paperInteractive ? handlePaperOut : undefined}
         >
           <planeGeometry args={[W - 0.05, H - 0.05]} />
         </mesh>
@@ -511,7 +705,16 @@ function BookModel({
 /* 立体书机关：书页展开后的折叠场景                                    */
 /* ------------------------------------------------------------------ */
 
-type PopUpSceneId = 'outside' | 'inside';
+type PopUpSceneId =
+  | 'outside'
+  | 'inside'
+  | 'xiangjiang'
+  | 'tongdao'
+  | 'chishui'
+  | 'luding'
+  | 'snow'
+  | 'hada'
+  | 'huishi';
 type PopUpLayerId =
   | 'building'
   | 'bear'
@@ -519,7 +722,34 @@ type PopUpLayerId =
   | 'zunyi_people'
   | 'zunyi_crates'
   | 'zunyi_stove'
-  | 'zunyi_bag';
+  | 'zunyi_bag'
+  | 'xj_rearguard'
+  | 'xj_shore'
+  | 'xj_bear'
+  | 'td_people_left'
+  | 'td_people_right'
+  | 'td_bear'
+  | 'cs_mountain_left'
+  | 'cs_mountain_right'
+  | 'cs_telegram'
+  | 'ld_bridge'
+  | 'ld_anchor_left'
+  | 'ld_anchor_right'
+  | 'ld_splash'
+  | 'ld_boat'
+  | 'snow_bg'
+  | 'snow_pile'
+  | 'snow_flag'
+  | 'snow_rifle'
+  | 'snow_grass'
+  | 'snow_bear'
+  | 'item_hook'
+  | 'item_matches'
+  | 'hada_news'
+  | 'hada_bear'
+  | 'hs_gate'
+  | 'hs_hug'
+  | 'hs_bear';
 type PopUpHalfSide = 'left' | 'right';
 type PopUpFold = 'in' | 'out';
 
@@ -648,6 +878,115 @@ const POPUP_SOURCES: Record<PopUpLayerId, PopUpSource> = {
     url: '/book/zunyi_bag.jpg',
     preserveFrame: true,
   },
+  // 湘江血战：血水底图同样平铺在书页上（见 CHAPTER_PAPER_URLS）；
+  // 对岸阻击阵地 / 近岸土坎 / 老陈都是黑底单物件，按非透明内容裁切。
+  xj_rearguard: {
+    url: '/book/xj_rearguard.jpg',
+  },
+  xj_shore: {
+    url: '/book/xj_shore.jpg',
+  },
+  xj_bear: {
+    url: '/book/xj_bear.jpg',
+  },
+  // 通道会议：地图已经改为平铺在书页上的底图（见 CHAPTER_PAPER_URLS），
+  // 两侧指路 / 争论的人物和拿纸条的熊都是黑底单物件，按内容裁切。
+  td_people_left: {
+    url: '/book/td_people_left.jpg',
+  },
+  td_people_right: {
+    url: '/book/td_people_right.jpg',
+  },
+  td_bear: {
+    url: '/book/td_bear.jpg',
+  },
+  // 四渡赤水：赤水河已经改为平铺在书页上的底图（见 CHAPTER_PAPER_URLS），
+  // 左右两座山和急电都是黑底单物件，按非透明内容裁切，
+  // 分别立在两页外侧和两山之间的前景。
+  cs_mountain_left: {
+    url: '/book/cs_mountain_left.jpg',
+  },
+  cs_mountain_right: {
+    url: '/book/cs_mountain_right.jpg',
+  },
+  cs_telegram: {
+    url: '/book/cs_telegram.jpg',
+  },
+  // 飞夺泸定桥：江水已经改为平铺在书页上的底图（见 CHAPTER_PAPER_URLS），
+  // 不再作为立体图层；铁链和战士保留整幅画框。
+  // 左右桥台 / 小船 / 水花都是黑底单物件，按非透明内容裁切，
+  // 让各自以合适的尺寸立在页面上。
+  ld_bridge: {
+    url: '/book/ld_bridge.jpg',
+    preserveFrame: true,
+  },
+  ld_anchor_left: {
+    url: '/book/ld_anchor_left.jpg',
+  },
+  ld_anchor_right: {
+    url: '/book/ld_anchor_right.jpg',
+  },
+  ld_splash: {
+    url: '/book/ld_splash.jpg',
+  },
+  ld_boat: {
+    url: '/book/ld_boat.jpg',
+  },
+  // 雪山草地八层：同一台相机渲染的 1672×941 整幅分层场景图。
+  // 每一层在山脊 / 草地上的位置就是最终构图，必须保留完整画框，
+  // 只靠 z 轴拉开前后景深。
+  snow_bg: {
+    url: '/book/snow_bg.jpg',
+    preserveFrame: true,
+  },
+  snow_pile: {
+    url: '/book/snow_pile.jpg',
+    preserveFrame: true,
+  },
+  snow_flag: {
+    url: '/book/snow_flag.jpg',
+    preserveFrame: true,
+  },
+  snow_rifle: {
+    url: '/book/snow_rifle.jpg',
+    preserveFrame: true,
+  },
+  snow_grass: {
+    url: '/book/snow_grass.jpg',
+    preserveFrame: true,
+  },
+  snow_bear: {
+    url: '/book/snow_bear.jpg',
+    preserveFrame: true,
+  },
+  item_hook: {
+    url: '/book/item_hook.jpg',
+    preserveFrame: true,
+  },
+  item_matches: {
+    url: '/book/item_matches.jpg',
+    preserveFrame: true,
+  },
+  // 哈达铺：报纸是整幅背景，必须保留完整画框；
+  // 老赵是抠图角色，按非透明内容裁切后贴在前景。
+  hada_news: {
+    url: '/book/hada_news.jpg',
+    preserveFrame: true,
+  },
+  hada_bear: {
+    url: '/book/hada_bear.jpg',
+  },
+  // 三军会师：城楼 / 拥抱群像 / 老陈都是黑底单物件，
+  // 按非透明内容裁切后立在不同深度上。
+  hs_gate: {
+    url: '/book/hs_gate.jpg',
+  },
+  hs_hug: {
+    url: '/book/hs_hug.jpg',
+  },
+  hs_bear: {
+    url: '/book/hs_bear.jpg',
+  },
 };
 
 interface PopUpDialog {
@@ -680,6 +1019,158 @@ const POPUP_DIALOGS: Partial<Record<PopUpLayerId, PopUpDialog>> = {
     title: '随时待命的行囊',
     content:
       '行囊还没来得及放下，里面塞满了文件和电报。会议一旦结束，他们随时准备背起行囊，再次冲入风雪之中。',
+  },
+  xj_rearguard: {
+    title: '断后的兄弟',
+    content:
+      '为了掩护主力过江，红三十四师的兄弟们死死钉在阵地上。这一别，就是永别。',
+  },
+  xj_shore: {
+    title: '满目疮痍',
+    content:
+      '渡口边散落着残破的辎重和草鞋。大搬家式的转移，让队伍付出了极其惨痛的代价。',
+  },
+  xj_bear: {
+    title: '老陈的眼泪',
+    content:
+      '老陈捂着脸，泣不成声：“八万六千人啊……过了江，就只剩三万了……”',
+  },
+  td_people_left: {
+    title: '改变既定方针',
+    content:
+      '“不能去湘西！那是往敌人的火坑里跳！我们应该改向敌人力量薄弱的贵州进军！”',
+  },
+  td_people_right: {
+    title: '激烈的争论',
+    content: '“可是这是中央定下的计划，说改就改，哪有那么容易？”',
+  },
+  td_bear: {
+    title: '老陈的担忧',
+    content: '老陈凑过来低声说：“同志，大家意见不一，咱们到底听谁的？”',
+  },
+  cs_mountain_left: {
+    title: '运动战的巅峰',
+    content:
+      '娄山关大捷，长征以来的最大胜利！红军在崇山峻岭间如神兵天降，硬是在绝境中杀出了一条血路。',
+  },
+  cs_mountain_right: {
+    title: '运动战的巅峰',
+    content:
+      '娄山关大捷，长征以来的最大胜利！红军在崇山峻岭间如神兵天降，硬是在绝境中杀出了一条血路。',
+  },
+  cs_telegram: {
+    title: '敌情万变',
+    content:
+      '侦察参谋递来急电：“敌军又追来了！”但这一次，他们连我们的尾灯都看不见！',
+  },
+  ld_bridge: {
+    title: '血肉铸就的通道',
+    content:
+      '桥板被敌人抽走，只剩下十三根冰冷的铁索。二十二名勇士一手攀着铁索，一手拿着枪，在枪林弹雨中硬是蹚出了一条生路。',
+  },
+  ld_anchor_left: {
+    title: '大渡河天险',
+    content:
+      '对岸的桥板被抽空，只剩下光秃秃的铁索连着两岸的桥台。红军无路可退。',
+  },
+  ld_anchor_right: {
+    title: '大渡河天险',
+    content:
+      '对岸的桥板被抽空，只剩下光秃秃的铁索连着两岸的桥台。红军无路可退。',
+  },
+  ld_boat: {
+    title: '金沙江的奇迹',
+    content:
+      '在这之前，红军仅靠着几条这样的小木船，在金沙江上日夜摆渡了七天七夜，跳出了几十万敌军的包围圈。',
+  },
+  snow_bg: {
+    title: '翻越夹金山',
+    content:
+      '夹金山海拔四千多米，终年积雪，当地人叫它“神山”。红军战士穿着单衣，踩着没膝的积雪，向云端里的山口一步步挪去。',
+  },
+  snow_pile: {
+    title: '没膝的雪窝',
+    content:
+      '雪面下是看不见的冰缝。前面的战士用木棍探路，后面的人沿着脚印走；一个人倒下，旁边的人立刻把他拉起来。',
+  },
+  snow_flag: {
+    title: '风雪中的红旗',
+    content:
+      '旗面被风撕成布条，旗杆却始终没有倒。战士们说，看见红旗，就知道队伍还在，路还在。',
+  },
+  snow_rifle: {
+    title: '肩上的钢枪',
+    content:
+      '枪托冻得粘手，枪栓几乎拉不开。可没有人把枪放下——翻过雪山，还有更长的路要打。',
+  },
+  snow_grass: {
+    title: '茫茫草地',
+    content:
+      '松潘草地一望无际，脚下是沼泽，水是黑的，不能喝。战士们把皮带、草根、树皮煮了充饥。',
+  },
+  snow_bear: {
+    title: '向导的叮嘱',
+    content:
+      '易班熊把最后一把炒面分给身边的同志：“跟着红旗走，别停下。停下，就再也起不来了。”',
+  },
+  item_hook: {
+    title: '一枚鱼钩',
+    content:
+      '缝衣针弯成的鱼钩，在沼泽的水塘里钓起过小鱼。几条小鱼，就是几个战士活下去的希望。',
+  },
+  item_matches: {
+    title: '几根火柴',
+    content:
+      '火柴受潮了，划了好几根才点着。一小簇火，烤干了衣服，也烤热了冻僵的手。',
+  },
+  hada_bear: {
+    title: '老赵的困惑',
+    content:
+      '老赵把几张皱巴巴的报纸拍在桌上：“参谋，满墙都是敌人的假消息，用放大镜找找，陕北的红军在哪？”',
+  },
+  hada_news: {
+    title: '敌人的“捷报”',
+    content:
+      '报纸上印着：“朱毛残部流窜川康，已溃不成军。”但这上面，藏着决定红军命运的情报。',
+  },
+  hs_gate: {
+    title: '会师楼',
+    content:
+      '1936年10月，甘肃会宁。这座明代古城门，见证了红军三大主力的历史性会合。',
+  },
+  hs_hug: {
+    title: '胜利的拥抱',
+    content:
+      '两万五千里跋涉，无数战友牺牲。此刻，他们终于紧紧拥抱在一起，宣告长征胜利结束！',
+  },
+  hs_bear: {
+    title: '跨越时空的迎接',
+    content:
+      '老陈站在城门前，张开双臂迎接你：“同志，我们走完了！这盛世，如你们所愿！”',
+  },
+};
+
+/**
+ * 平铺底图的弹窗。
+ *
+ * 湘江血水、通道地图都直接铺在书页上（见 CHAPTER_PAPER_URLS），
+ * 没有立体纸板可以挂点击，所以让左右两页纸面本身承担这一条交互。
+ */
+const PAPER_CLICK_DIALOGS: Partial<Record<ChapterId, PopUpDialog>> = {
+  xiangjiang: {
+    title: '血染湘江',
+    content:
+      '冰冷的江水被鲜血染成了红色。数万红军将士的英魂，永远留在了这里。',
+  },
+  tongdao: {
+    title: '生死抉择',
+    content:
+      '原计划是去湘江与红二、六军团会合，但敌人的口袋阵已经张开了。现在，必须找出一条生路。',
+  },
+  chishui: {
+    title: '生死交织的赤水河',
+    content:
+      '一渡、二渡、三渡、四渡！红军在湍急的赤水河上反复穿插，将蒋介石的几十万大军彻底绕晕！',
   },
 };
 
@@ -726,19 +1217,17 @@ interface PopUpLayerConfig {
 const POPUP_SPREAD_SCALE = 2;
 
 /**
- * 遵义会议室内四层共用同一个画框宽度。
+ * 分层场景共用同一个画框宽度。
  *
- * 四张素材都是 1671×941 的整幅场景图（preserveFrame），
- * 人群、木箱、火炉、书包在各自画布里的位置就是最终构图：
- *   · 人群铺满整个跨页；
- *   · 木箱在右下角；
- *   · 火炉也在右下角、比木箱更靠前；
- *   · 书包压在箱子上，靠近书脊右侧。
- * 因此不能逐层裁切后各自缩放，否则每一层都会重新居中，
- * 叠在一起时构图完全错位。统一 halfWidth = 半页宽：
- * 总宽 3.25 正好铺满左右两页，高度 ≈1.83，仍在页高 2.28 内。
+ * 遵义会议四层、雪山草地八层都是同一台相机渲染的 1672×941 整幅场景图
+ * （preserveFrame）：人群、木箱、火炉、雪山、草地、步枪在各自画布里的
+ * 位置就是最终构图。如果逐张裁到内容包围盒再各自缩放，每一层都会被
+ * 重新居中、放大，叠在一起时位置和比例就全乱了。
+ *
+ * 因此统一 halfWidth = 半页宽：总宽 3.25 正好铺满左右两页，
+ * 高度 ≈1.83，仍在页高 2.28 内，只靠 z 轴拉开景深。
  */
-const ZUNYI_LAYER_HALF_WIDTH = (PAGE_W / 2) * POPUP_SPREAD_SCALE;
+const SCENE_LAYER_HALF_WIDTH = (PAGE_W / 2) * POPUP_SPREAD_SCALE;
 
 /**
  * 图层配置（放大后的尺寸以左右两页总宽 ≈3.25 为基准）：
@@ -761,7 +1250,7 @@ const POPUP_LAYERS: PopUpLayerConfig[] = [
     id: 'roomBg',
     scene: 'inside',
     z: -0.6,
-    halfWidth: ZUNYI_LAYER_HALF_WIDTH,
+    halfWidth: SCENE_LAYER_HALF_WIDTH,
     angle: 0.3,
     fold: 'in', // 背景幕布：向外张开，包住整个跨页
   },
@@ -769,7 +1258,7 @@ const POPUP_LAYERS: PopUpLayerConfig[] = [
     id: 'zunyi_people',
     scene: 'inside',
     z: -0.3, // 最靠后：开会的人群
-    halfWidth: ZUNYI_LAYER_HALF_WIDTH,
+    halfWidth: SCENE_LAYER_HALF_WIDTH,
     angle: 0.32,
     fold: 'in',
   },
@@ -777,7 +1266,7 @@ const POPUP_LAYERS: PopUpLayerConfig[] = [
     id: 'zunyi_crates',
     scene: 'inside',
     z: 0.1, // 中景：木箱
-    halfWidth: ZUNYI_LAYER_HALF_WIDTH,
+    halfWidth: SCENE_LAYER_HALF_WIDTH,
     angle: 0.3,
     fold: 'in',
   },
@@ -785,7 +1274,7 @@ const POPUP_LAYERS: PopUpLayerConfig[] = [
     id: 'zunyi_stove',
     scene: 'inside',
     z: 0.4, // 前景：火炉
-    halfWidth: ZUNYI_LAYER_HALF_WIDTH,
+    halfWidth: SCENE_LAYER_HALF_WIDTH,
     angle: 0.05,
     fold: 'out',
   },
@@ -793,8 +1282,263 @@ const POPUP_LAYERS: PopUpLayerConfig[] = [
     id: 'zunyi_bag',
     scene: 'inside',
     z: 0.2, // 最靠前：书包压着箱子
-    halfWidth: ZUNYI_LAYER_HALF_WIDTH,
+    halfWidth: SCENE_LAYER_HALF_WIDTH,
     angle: 0.26,
+    fold: 'out',
+  },
+  // 湘江血战：血水已经平铺在书页上（见 CHAPTER_PAPER_URLS），
+  // 对岸阻击阵地用山谷折立在远处，近岸土坎和老陈依次压到前景。
+  {
+    id: 'xj_rearguard',
+    scene: 'xiangjiang',
+    z: -0.8,
+    halfWidth: PAGE_W * 0.5,
+    angle: 0.25,
+    fold: 'in',
+  },
+  {
+    id: 'xj_shore',
+    scene: 'xiangjiang',
+    z: 0.1,
+    halfWidth: 0.6,
+    offsetX: 1.0,
+    angle: 0.2,
+    fold: 'out',
+  },
+  {
+    id: 'xj_bear',
+    scene: 'xiangjiang',
+    z: 0.5,
+    halfWidth: 0.5,
+    offsetX: -0.9,
+    angle: 0.2,
+    fold: 'out',
+  },
+  // 通道会议：地图已经平铺在书页上（见 CHAPTER_PAPER_URLS），
+  // 左侧指路人物与右侧争论人物分列两页，拿纸条的熊站在正中前方。
+  {
+    id: 'td_people_left',
+    scene: 'tongdao',
+    z: 0,
+    halfWidth: 0.5,
+    offsetX: -0.7,
+    angle: 0.25,
+    fold: 'out',
+  },
+  {
+    id: 'td_people_right',
+    scene: 'tongdao',
+    z: 0,
+    halfWidth: 0.38,
+    offsetX: 0.8,
+    angle: 0.25,
+    fold: 'out',
+  },
+  {
+    id: 'td_bear',
+    scene: 'tongdao',
+    z: 0.3,
+    halfWidth: 0.2,
+    offsetX: 0,
+    angle: 0.2,
+    fold: 'out',
+  },
+  // 四渡赤水：赤水河已经平铺在书页上（见 CHAPTER_PAPER_URLS），
+  // 两座山分立左右夹出峡谷纵深，急电压在两山之间的前景。
+  {
+    id: 'cs_mountain_left',
+    scene: 'chishui',
+    z: -0.35,
+    halfWidth: 0.8,
+    offsetX: -0.7,
+    angle: 0.25,
+    fold: 'out',
+  },
+  {
+    id: 'cs_mountain_right',
+    scene: 'chishui',
+    z: 0.6,
+    halfWidth: 0.5,
+    offsetX: 0.85,
+    angle: 0.25,
+    fold: 'out',
+  },
+  {
+    id: 'cs_telegram',
+    scene: 'chishui',
+    z: 0.3,
+    halfWidth: 0.3,
+    offsetX: 0,
+    angle: 0.2,
+    fold: 'out',
+  },
+  // 飞夺泸定桥：江水已经平铺在书页上（见 CHAPTER_PAPER_URLS），
+  // 不再立起来；铁链与战士横跨跨页，
+  // 左右桥台立在两页外侧，水花压在最前面，小船放在右下角。
+  {
+    id: 'ld_bridge',
+    scene: 'luding',
+    z: 0.1,
+    halfWidth: PAGE_W * 0.8,
+    offsetX: 0,
+    angle: 0.2,
+    fold: 'out',
+  },
+  {
+    id: 'ld_anchor_left',
+    scene: 'luding',
+    z: 0.1,
+    halfWidth: 0.5,
+    offsetX: -1.2,
+    angle: 0.2,
+    fold: 'out',
+  },
+  {
+    id: 'ld_anchor_right',
+    scene: 'luding',
+    z: 0.1,
+    halfWidth: 0.5,
+    offsetX: 1.2,
+    angle: 0.2,
+    fold: 'out',
+  },
+  {
+    id: 'ld_splash',
+    scene: 'luding',
+    z: -0.1,
+    halfWidth: 1.5,
+    offsetX: 0,
+    angle: 0.3,
+    fold: 'out',
+  },
+  {
+    id: 'ld_boat',
+    scene: 'luding',
+    z: 0.7,
+    halfWidth: 0.5,
+    offsetX: 0.6,
+    angle: 0.3,
+    fold: 'out',
+  },
+  // 雪山草地：八层从远景山脊一路叠到最前面的小物件。
+  // z 严格按照「背景幕布 → 雪堆 → 红旗 → 步枪 → 草地 → 易班熊
+  // → 鱼钩 / 火柴」从后往前递增；八层共用同一个画框，只靠 z 拉开景深。
+  {
+    id: 'snow_bg',
+    scene: 'snow',
+    z: -0.6, // 背景幕布：整排雪山
+    halfWidth: SCENE_LAYER_HALF_WIDTH,
+    // 山谷折的外缘会向读者探出约 halfWidth·sin(angle)：
+    // 角度太大时，外缘会越过 z=0 的步枪，把枪身整片挡住。
+    // 0.1 仍然保留 V 型展开，但整张雪山幕布始终落在步枪之后。
+    angle: 0.1,
+    fold: 'in',
+  },
+  {
+    id: 'snow_pile',
+    scene: 'snow',
+    z: -0.2, // 左下角的雪堆
+    halfWidth: SCENE_LAYER_HALF_WIDTH,
+    angle: 0.12,
+    fold: 'in',
+  },
+  {
+    id: 'snow_flag',
+    scene: 'snow',
+    z: -0.21, // 雪坡上的红旗
+    halfWidth: SCENE_LAYER_HALF_WIDTH,
+    angle: 0.12,
+    fold: 'in',
+  },
+  {
+    id: 'snow_rifle',
+    scene: 'snow',
+    z: -0.21, // 画面左下角的步枪（可拖动）
+    halfWidth: SCENE_LAYER_HALF_WIDTH,
+    angle: 0.12,
+    fold: 'in',
+  },
+  {
+    id: 'snow_grass',
+    scene: 'snow',
+    z: 0.2, // 横贯画面底部的草地
+    halfWidth: SCENE_LAYER_HALF_WIDTH,
+    angle: 0.17,
+    fold: 'in',
+  },
+  {
+    id: 'snow_bear',
+    scene: 'snow',
+    z: 0.4, // 右侧负重前行的易班熊
+    halfWidth: SCENE_LAYER_HALF_WIDTH,
+    angle: 0.18,
+    fold: 'in',
+  },
+  {
+    id: 'item_hook',
+    scene: 'snow',
+    z: 0.5, // 最前景：鱼钩
+    offsetX: -0.3,
+    halfWidth: SCENE_LAYER_HALF_WIDTH,
+    angle: 0.18,
+    fold: 'in',
+  },
+  {
+    id: 'item_matches',
+    scene: 'snow',
+    z: 0.5, // 最前景：火柴
+    offsetX: 0.3,
+    halfWidth: SCENE_LAYER_HALF_WIDTH,
+    angle: 0.18,
+    fold: 'in',
+  },
+  // 哈达铺：整张报纸作为背景幕布，老赵站在报纸前。
+  // 报纸用山谷折（in）向外张开，包住整个跨页；
+  // 老赵用屋脊折（out）立在左前方，避免和报纸正面穿模。
+  {
+    id: 'hada_news',
+    scene: 'hada',
+    z: -0.4,
+    halfWidth: PAGE_W,
+    angle: 0.3,
+    fold: 'in',
+  },
+  {
+    id: 'hada_bear',
+    scene: 'hada',
+    z: 0.2,
+    halfWidth: 0.2,
+    offsetX: -0.4,
+    angle: 0.2,
+    fold: 'out',
+  },
+  // 三军会师：城楼用山谷折横跨整幅跨页作为最宏大的背景，
+  // 拥抱群像在左前，老陈在右前张开双臂。
+  {
+    id: 'hs_gate',
+    scene: 'huishi',
+    z: -0.4,
+    halfWidth: PAGE_W * 1.0,
+    offsetX: 0,
+    angle: 0.3,
+    fold: 'in',
+  },
+  {
+    id: 'hs_hug',
+    scene: 'huishi',
+    z: 0.2,
+    halfWidth: 0.6,
+    offsetX: -0.4,
+    angle: 0.25,
+    fold: 'out',
+  },
+  {
+    id: 'hs_bear',
+    scene: 'huishi',
+    z: 0.5,
+    halfWidth: 0.5,
+    offsetX: 0.5,
+    angle: 0.2,
     fold: 'out',
   },
   // 门外：建筑是屋脊折，熊站在建筑正前方
@@ -818,6 +1562,8 @@ const POPUP_LAYERS: PopUpLayerConfig[] = [
     fold: 'out',
   },
 ];
+
+const POPUP_LAYER_BY_ID = new Map(POPUP_LAYERS.map((layer) => [layer.id, layer]));
 
 interface CutoutBounds {
   /** 可见内容在贴图中的归一化包围盒（0~1，x 向右，y 向上） */
@@ -923,12 +1669,53 @@ const NO_RAYCAST = () => {};
 
 /**
  * 只负责点击拾取的材质：visible = false 时 WebGL 不提交渲染，
- * 但 Raycaster 只检查几何体，命中判断照常工作。
+ * 但 Raycaster 仍然会对几何体求交。
+ *
+ * side 必须是 DoubleSide：Mesh.raycast 会按材质 side 剔除背面三角形，
+ * 而 V 折纸板左右两半的朝向由书页矩阵实时决定，
+ * 左侧纸板在部分取景角度下会背对镜头——单面材质会直接漏掉点击。
  */
-const HIT_MATERIAL = new THREE.MeshBasicMaterial({ visible: false });
+const HIT_MATERIAL = new THREE.MeshBasicMaterial({
+  visible: false,
+  side: THREE.DoubleSide,
+});
+
+/** 按贴图坐标快速查询像素是否可见，用于点击穿透透明区域 */
+const textureContexts = new WeakMap<
+  THREE.Texture,
+  CanvasRenderingContext2D | null
+>();
+
+function isTextureOpaque(texture: THREE.Texture, u: number, v: number) {
+  const canvas = texture.image as HTMLCanvasElement | undefined;
+  if (!canvas || typeof canvas.getContext !== 'function') return true;
+
+  let ctx = textureContexts.get(texture);
+  if (ctx === undefined) {
+    ctx = canvas.getContext('2d', { willReadFrequently: true });
+    textureContexts.set(texture, ctx);
+  }
+  if (!ctx) return true;
+
+  // Canvas 的 y 轴向下，纹理 v 轴向上
+  const x = THREE.MathUtils.clamp(
+    Math.floor(u * canvas.width),
+    0,
+    canvas.width - 1,
+  );
+  const y = THREE.MathUtils.clamp(
+    Math.floor((1 - v) * canvas.height),
+    0,
+    canvas.height - 1,
+  );
+  // 与材质的 alphaTest 0.1 对齐：几乎透明的边缘不拦截点击
+  return ctx.getImageData(x, y, 1, 1).data[3] > 24;
+}
 
 interface CardHalfProps {
   geometry: THREE.BufferGeometry;
+  /** 拾取层所属图层，点击时用来查贴图与弹窗文案 */
+  hitLayerId: PopUpLayerId;
   /** 可见内容的包围盒，透明区域不拦截点击；null 表示这一半没有内容 */
   hitGeometry: THREE.BufferGeometry | null;
   materials: CardMaterials;
@@ -938,6 +1725,11 @@ interface CardHalfProps {
   onPointerOver: (event: ThreeEvent<PointerEvent>) => void;
   onPointerOut: (event: ThreeEvent<PointerEvent>) => void;
   onClick: (event: ThreeEvent<MouseEvent>) => void;
+  /** 只有可拖动图层（雪山步枪）才挂载这三个指针事件 */
+  onPointerDown?: (event: ThreeEvent<PointerEvent>) => void;
+  onPointerMove?: (event: ThreeEvent<PointerEvent>) => void;
+  onPointerUp?: (event: ThreeEvent<PointerEvent>) => void;
+  onPointerCancel?: (event: ThreeEvent<PointerEvent>) => void;
 }
 
 /**
@@ -949,6 +1741,7 @@ interface CardHalfProps {
  */
 function CardHalf({
   geometry,
+  hitLayerId,
   hitGeometry,
   materials,
   groupRef,
@@ -956,6 +1749,10 @@ function CardHalf({
   onPointerOver,
   onPointerOut,
   onClick,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
 }: CardHalfProps) {
   return (
     <group ref={groupRef} matrixAutoUpdate={false}>
@@ -969,9 +1766,14 @@ function CardHalf({
         <mesh
           geometry={hitGeometry}
           material={HIT_MATERIAL}
+          userData={{ layerId: hitLayerId }}
           onPointerOver={onPointerOver}
           onPointerOut={onPointerOut}
           onClick={onClick}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
         />
       )}
       {Array.from({ length: CARD_LAYERS }, (_, index) => (
@@ -1258,6 +2060,146 @@ interface DollyState {
   returnStartedAt: number | null;
 }
 
+/* ---------------- 雪山粒子 ---------------- */
+
+const SNOW_COUNT = 420;
+/** 雪花在书页平面上的铺开半宽 / 半高（书中坐标单位） */
+const SNOW_SPAN_X = 2.6;
+const SNOW_SPAN_Y = 1.7;
+/** 围绕 position.z = 1.5 上下各 0.7，让雪花有前后景深 */
+const SNOW_SPAN_Z = 0.7;
+const SNOW_FALL_MIN = 0.32;
+const SNOW_FALL_MAX = 0.72;
+
+interface Snowflake {
+  /** 书页平面内的基准位置 */
+  x: number;
+  y: number;
+  /** 距离书面的高度，每帧递减 */
+  z: number;
+  /** 下落速度（单位 / 秒） */
+  speed: number;
+  /** 水平摇摆幅度 */
+  sway: number;
+  /** 摇摆相位，避免所有雪花同步摆动 */
+  phase: number;
+}
+
+/** PointsMaterial 默认画方点；用一张径向渐变贴图把它变成软边圆点 */
+function createSnowflakeTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.35, 'rgba(255,255,255,0.92)');
+  gradient.addColorStop(0.72, 'rgba(255,255,255,0.32)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 64, 64);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/**
+ * 漫天飞雪。只在雪山章节挂载。
+ *
+ * 整团雪挂在书本坐标系里（书摊平后 z 轴朝上），
+ * 所以 position.z = 1.5 就是悬浮在书本上方的高处；
+ * 每片雪花沿 -z 下落，穿过 0.8 ~ 2.2 的高度带后从顶部循环。
+ * x / y 用 Math.sin / Math.cos 叠加各自相位做水平摇摆。
+ */
+function Snowfall() {
+  const flakes = useMemo<Snowflake[]>(
+    () =>
+      Array.from({ length: SNOW_COUNT }, () => ({
+        x: (Math.random() * 2 - 1) * SNOW_SPAN_X,
+        y: (Math.random() * 2 - 1) * SNOW_SPAN_Y,
+        z: (Math.random() * 2 - 1) * SNOW_SPAN_Z,
+        speed: SNOW_FALL_MIN + Math.random() * (SNOW_FALL_MAX - SNOW_FALL_MIN),
+        sway: 0.05 + Math.random() * 0.13,
+        phase: Math.random() * Math.PI * 2,
+      })),
+    [],
+  );
+
+  // 先把初始坐标写进 position，避免第一帧全部堆在原点闪一下
+  const positions = useMemo(() => {
+    const array = new Float32Array(SNOW_COUNT * 3);
+    flakes.forEach((flake, index) => {
+      array[index * 3] = flake.x;
+      array[index * 3 + 1] = flake.y;
+      array[index * 3 + 2] = flake.z;
+    });
+    return array;
+  }, [flakes]);
+
+  const geometry = useMemo(() => {
+    const next = new THREE.BufferGeometry();
+    const attribute = new THREE.BufferAttribute(positions, 3);
+    attribute.setUsage(THREE.DynamicDrawUsage);
+    next.setAttribute('position', attribute);
+    return next;
+  }, [positions]);
+
+  const texture = useMemo(createSnowflakeTexture, []);
+
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+      texture?.dispose();
+    };
+  }, [geometry, texture]);
+
+  useFrame((state, delta) => {
+    // 切到后台再回来 delta 会很大，钳一下避免雪花整体瞬移
+    const step = Math.min(delta, 0.06);
+    const time = state.clock.elapsedTime;
+
+    for (let i = 0; i < SNOW_COUNT; i += 1) {
+      const flake = flakes[i];
+      flake.z -= flake.speed * step;
+      if (flake.z < -SNOW_SPAN_Z) {
+        // 落到底部后回到顶部，顺便换一个水平位置，避免循环痕迹
+        flake.z = SNOW_SPAN_Z;
+        flake.x = (Math.random() * 2 - 1) * SNOW_SPAN_X;
+        flake.y = (Math.random() * 2 - 1) * SNOW_SPAN_Y;
+      }
+
+      const index = i * 3;
+      positions[index] =
+        flake.x + Math.sin(time * 0.9 + flake.phase) * flake.sway;
+      positions[index + 1] =
+        flake.y + Math.cos(time * 0.7 + flake.phase * 1.7) * flake.sway * 0.6;
+      positions[index + 2] = flake.z;
+    }
+
+    geometry.attributes.position.needsUpdate = true;
+  });
+
+  return (
+    <points
+      geometry={geometry}
+      position={[0, 0, 1.5]}
+      frustumCulled={false}
+    >
+      <pointsMaterial
+        map={texture}
+        color="#ffffff"
+        size={0.042}
+        sizeAttenuation
+        transparent
+        opacity={0.88}
+        depthWrite={false}
+        toneMapped={false}
+      />
+    </points>
+  );
+}
+
 interface PopUpSceneProps {
   /** 书本展开进度 0 → 1，由 Book 的 useFrame 每帧写入 */
   openRef: RefObject<number>;
@@ -1278,7 +2220,28 @@ function PopUpScene({
   leftPageRef,
 }: PopUpSceneProps) {
   const textures = usePopUpTextures();
-  const [scene, setScene] = useState<PopUpSceneId>('outside');
+  const { chapter } = useJourneyState();
+  /**
+   * 遵义章节内部的「门外 / 室内」两幕。
+   * 雪山 / 哈达铺不参与推门运镜，各自直接使用专属 scene。
+   */
+  const [roomStage, setRoomStage] = useState<'outside' | 'inside'>('outside');
+  const activeScene: PopUpSceneId =
+    chapter === 'snow'
+      ? 'snow'
+      : chapter === 'hada'
+        ? 'hada'
+        : chapter === 'luding'
+          ? 'luding'
+          : chapter === 'xiangjiang'
+            ? 'xiangjiang'
+            : chapter === 'tongdao'
+              ? 'tongdao'
+              : chapter === 'chishui'
+                ? 'chishui'
+                : chapter === 'huishi'
+                  ? 'huishi'
+                  : roomStage;
   const camera = useThree((state) => state.camera);
   const viewport = useThree((state) => state.size);
   const bookScale = viewport.width < viewport.height ? 0.52 : 1;
@@ -1287,6 +2250,26 @@ function PopUpScene({
   const dolly = useRef<DollyState | null>(null);
   /** 当前机关显隐进度：0 = 完全隐藏，1 = 完全显示 */
   const revealRef = useRef(0);
+
+  /**
+   * 步枪在书页平面上的拖拽位移（书本局部坐标）。
+   * x 叠加到 layer.offsetX，z 叠加到 layer.z，绘制时再钳制范围。
+   */
+  const rifleDrag = useRef({ x: 0, z: 0 });
+  const rifleDragSession = useRef<{
+    pointerId: number;
+    startX: number;
+    /** 书本局部 Y：摊平后就是页面深度方向（图层配置里的 z） */
+    startY: number;
+    offsetX: number;
+    offsetZ: number;
+    /** 有实际位移才算拖拽；没位移的按下 / 抬起要当成点击 */
+    moved: boolean;
+    /** 按下时命中的图层；没位移就按这个图层开弹窗 */
+    picked: PopUpLayerId;
+  } | null>(null);
+  const dragPlane = useMemo(() => new THREE.Plane(), []);
+  const dragPoint = useMemo(() => new THREE.Vector3(), []);
 
   // 每一层的左右两张纸板各有一个 Group，矩阵由 useFrame 直接写入
   const cardGroups = useRef<Partial<Record<PopUpHalfKey, THREE.Group>>>({});
@@ -1438,7 +2421,10 @@ function PopUpScene({
   useEffect(() => {
     dolly.current = null;
     setCinematic(false);
-    setScene('outside');
+    setDragging(false);
+    setRoomStage('outside');
+    rifleDrag.current = { x: 0, z: 0 };
+    rifleDragSession.current = null;
     document.body.style.cursor = '';
     // 重新翻阅时封面会瞬间合上：机关要同步消失，
     // 不能等下一帧 useFrame，否则会有一帧纸板夹在合上的书页里
@@ -1455,11 +2441,32 @@ function PopUpScene({
   }, [resetToken]);
 
   /**
+   * 切换章节：
+   * - 取消还没跑完的推门运镜，把镜头放回原位；
+   * - 遵义章节回到门外第一幕；
+   * - 步枪拖拽位移清零，避免雪山里的位置带到下一章。
+   */
+  useEffect(() => {
+    const shot = dolly.current;
+    if (shot) {
+      camera.position.copy(shot.fromPosition);
+      camera.quaternion.copy(shot.fromQuaternion);
+    }
+    dolly.current = null;
+    setCinematic(false);
+    setDragging(false);
+    setRoomStage('outside');
+    rifleDrag.current = { x: 0, z: 0 };
+    rifleDragSession.current = null;
+    document.body.style.cursor = '';
+  }, [chapter, camera]);
+
+  /**
    * 推门：镜头 1 秒内从当前视角推到门前（z = 1），
    * 推到底时切换成室内，停留片刻后瞬间弹回原位。
    */
   const startRoomEntry = () => {
-    if (scene === 'inside' || dolly.current) return;
+    if (chapter !== 'zunyi' || roomStage === 'inside' || dolly.current) return;
     document.body.style.cursor = '';
 
     const buildingLayer = POPUP_LAYERS.find(
@@ -1503,7 +2510,151 @@ function PopUpScene({
   const handlePointerOut = (event: ThreeEvent<PointerEvent>) => {
     if (openRef.current < 0.995) return;
     event.stopPropagation();
+    // 拖动步枪时指针可能暂时离开纸板，不能把 grabbing 光标清掉
+    if (!rifleDragSession.current) document.body.style.cursor = '';
+  };
+
+  /**
+   * 把当前指针射线投到右页纸面，再换算到机关根节点（书本局部）坐标。
+   * 得到的是页面平面上的 (x, z)，正好对应图层配置里的 offsetX / z。
+   */
+  const pagePointFromEvent = (event: ThreeEvent<PointerEvent>) => {
+    const root = rootRef.current;
+    const anchor = rightPageRef.current;
+    if (!root || !anchor) return null;
+
+    root.updateWorldMatrix(true, false);
+    anchor.updateWorldMatrix(true, false);
+
+    const normal = new THREE.Vector3(0, 1, 0).transformDirection(
+      anchor.matrixWorld,
+    );
+    const origin = new THREE.Vector3().setFromMatrixPosition(
+      anchor.matrixWorld,
+    );
+    dragPlane.setFromNormalAndCoplanarPoint(normal, origin);
+    if (!event.ray.intersectPlane(dragPlane, dragPoint)) return null;
+
+    // 机关根节点的 matrixWorld 可能带视差 / 书本倾斜，
+    // 必须换回根节点局部空间，位移才能直接叠加到图层配置上。
+    root.worldToLocal(dragPoint);
+    return dragPoint.clone();
+  };
+
+  const handleRiflePointerDown = (event: ThreeEvent<PointerEvent>) => {
+    if (chapter !== 'snow' || openRef.current < 0.995) return;
+    // 只抓住画面里真正有步枪像素的位置；透明包围盒区域继续穿透
+    const picked = pickTopOpaqueLayer(event.intersections);
+    if (picked !== 'snow_rifle') return;
+    const point = pagePointFromEvent(event);
+    if (!point) return;
+
+    event.stopPropagation();
+    const target = event.target as unknown as {
+      setPointerCapture?: (pointerId: number) => void;
+    };
+    target.setPointerCapture?.(event.pointerId);
+    rifleDragSession.current = {
+      pointerId: event.pointerId,
+      startX: point.x,
+      startY: point.y,
+      offsetX: rifleDrag.current.x,
+      offsetZ: rifleDrag.current.z,
+      moved: false,
+      picked,
+    };
+    document.body.style.cursor = 'grabbing';
+    // 拖动期间卸载 OrbitControls，避免镜头和步枪一起被拖走。
+    // 用 dragging 而不是 cinematic：后者会改变相机视差，
+    // 按下瞬间整个画面会跳一下，点击拾取也会错位。
+    setDragging(true);
+  };
+
+  const handleRiflePointerMove = (event: ThreeEvent<PointerEvent>) => {
+    const session = rifleDragSession.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    const point = pagePointFromEvent(event);
+    if (!point) return;
+
+    event.stopPropagation();
+    // 超过 1cm 的书页位移才算拖拽，轻微抖动仍然按点击处理
+    if (
+      Math.abs(point.x - session.startX) + Math.abs(point.y - session.startY) >
+      0.01
+    ) {
+      session.moved = true;
+    }
+    rifleDrag.current = {
+      // x：左右横移。限制在左半页到书脊附近，
+      // 再往右会把枪推到易班熊背后，看起来像凭空消失。
+      x: THREE.MathUtils.clamp(
+        session.offsetX + (point.x - session.startX),
+        -0.7,
+        0.7,
+      ),
+      // 页面深度：摊平后机关根节点的 −Y 就是图层配置里的 z。
+      // 限制幅度，避免拖到草地 / 熊的背后被完全挡住。
+      z: THREE.MathUtils.clamp(
+        session.offsetZ - (point.y - session.startY),
+        -0.3,
+        0.3,
+      ),
+    };
+    document.body.style.cursor = 'grabbing';
+  };
+
+  const endRifleDrag = (event: ThreeEvent<PointerEvent>) => {
+    const session = rifleDragSession.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    rifleDragSession.current = null;
+    const target = event.target as unknown as {
+      releasePointerCapture?: (pointerId: number) => void;
+    };
+    target.releasePointerCapture?.(event.pointerId);
     document.body.style.cursor = '';
+    setDragging(false);
+
+    // 按下没移动 = 点击。拖拽图层挂上了指针事件，
+    // R3F 不会再补发 click，所以在这里补开按下时命中的弹窗。
+    if (!session.moved) {
+      const dialog = POPUP_DIALOGS[session.picked];
+      if (dialog) onOpenDialog(session.picked, dialog.title, dialog.content);
+    }
+  };
+
+  /**
+   * 沿射线从前往后找第一块「真正画了东西」的图层。
+   *
+   * 拾取几何只能是矩形包围盒，而雪山是七八层叠在一起的剪影：
+   * 旗面、草地、步枪的包围盒会盖住后面雪堆的可见部分。
+   * 这里按贴图 alpha 再筛一次，透明区域直接穿透，
+   * 保证每一层都能点到自己画面内非透明的部分。
+   */
+  const pickTopOpaqueLayer = (
+    intersections: THREE.Intersection[],
+  ): PopUpLayerId | null => {
+    const visited = new Set<PopUpLayerId>();
+    for (const hit of intersections) {
+      const object = hit.object as THREE.Mesh & {
+        userData: { layerId?: PopUpLayerId };
+      };
+      const id = object.userData.layerId;
+      if (!id || visited.has(id)) continue;
+      visited.add(id);
+
+      const layer = POPUP_LAYER_BY_ID.get(id);
+      const cutout = textures[id];
+      const group = object.parent;
+      if (!layer || !cutout || !group) continue;
+
+      // 纸板局部坐标 → 整张贴图的归一化 uv
+      const local = group.worldToLocal(hit.point.clone());
+      const u = (local.x + layer.halfWidth) / (layer.halfWidth * 2);
+      const v = local.y / popUpHeight(layer, cutout);
+      if (u < 0 || u > 1 || v < 0 || v > 1) continue;
+      if (isTextureOpaque(cutout.texture, u, v)) return id;
+    }
+    return null;
   };
 
   const handleClick = (
@@ -1516,15 +2667,18 @@ function PopUpScene({
     if ((event.delta ?? 0) > 5) return;
     event.stopPropagation();
 
+    // 以实际画面为准：包围盒里透明的部分让给后面的图层
+    const picked = pickTopOpaqueLayer(event.intersections) ?? layer.id;
+
     // 建筑就是“门”，保留一镜到底的推门运镜
-    if (layer.id === 'building') {
+    if (picked === 'building') {
       startRoomEntry();
       return;
     }
 
-    // 熊 / 会议群像 / 背包：交给 React 层的自定义弹窗
-    const dialog = POPUP_DIALOGS[layer.id];
-    if (dialog) onOpenDialog(layer.id, dialog.title, dialog.content);
+    // 熊 / 会议群像 / 背包 / 雪山八层：交给 React 层的自定义弹窗
+    const dialog = POPUP_DIALOGS[picked];
+    if (dialog) onOpenDialog(picked, dialog.title, dialog.content);
   };
 
   useFrame((state) => {
@@ -1592,10 +2746,16 @@ function PopUpScene({
         rightGroup.visible = popupVisible;
         if (!popupVisible) return;
 
+        // 步枪拖拽：在图层自身的 z 上叠加页面平面位移。
+        // 用 ref 读取，拖动时不需要触发 React 重渲染。
+        const drag =
+          layer.id === 'snow_rifle' ? rifleDrag.current : null;
+
         // 折缝上的公共点：两张书页在同一深度处贴纸点的中点。
         // 书完全摊平时它就是书脊上的点；翻开过程中两根书页一起定义它。
-        _spineL.set(0, 0, layer.z).applyMatrix4(_frameL);
-        _spineR.set(0, 0, layer.z).applyMatrix4(_frameR);
+        const layerZ = layer.z + (drag?.z ?? 0);
+        _spineL.set(0, 0, layerZ).applyMatrix4(_frameL);
+        _spineR.set(0, 0, layerZ).applyMatrix4(_frameR);
         _creasePoint.copy(_spineL).add(_spineR).multiplyScalar(0.5);
 
         // 胶线：从书脊向外贴在书页上的底边，方向随左右书页各自旋转
@@ -1621,7 +2781,7 @@ function PopUpScene({
 
         // 横向微调：直接叠加到最终矩阵的 position.x 上，
         // 左右两半用同一个偏移量，折缝仍然严丝合缝，整组一起平移。
-        const offsetX = layer.offsetX ?? 0;
+        const offsetX = (layer.offsetX ?? 0) + (drag?.x ?? 0);
         const cardX = _creasePoint.x + offsetX;
 
         // 右半：X 沿胶线向外，Y 沿折缝向上，Z = X × Y 是纸板正面
@@ -1673,7 +2833,7 @@ function PopUpScene({
           camera.quaternion.copy(shot.closeQuaternion);
           shot.phase = 'hold';
           shot.arrivedAt = elapsed;
-          setScene('inside');
+          setRoomStage('inside');
         }
       } else if (shot.phase === 'hold') {
         if (
@@ -1711,6 +2871,7 @@ function PopUpScene({
         }
       }
     }
+
   });
 
   return (
@@ -1718,15 +2879,20 @@ function PopUpScene({
      * 机关根节点：所有纸板的矩阵都由 useFrame 以这里为原点写入。
      * 它自己不带任何变换，所以子节点的 matrix 就是书中坐标系下的矩阵。
      */
-    <group ref={rootRef} name={`popup-${scene}`}>
+    <group ref={rootRef} name={`popup-${activeScene}`}>
       {POPUP_LAYERS.map((layer) => {
         const panel = panels[layer.id];
         const card = materials[layer.id];
         if (!panel || !card) return null;
 
-        const active = scene === layer.scene;
-        // 背景墙只做背景，不参与悬停 / 点击
-        const interactive = active && layer.id !== 'roomBg';
+        const active = activeScene === layer.scene;
+        // 有弹窗文案的图层才参与悬停 / 点击；
+        // building 是「门」，没有普通弹窗但要走推门运镜，单独保留；
+        // 室内背景墙、泸定桥水花这类纯装饰层不响应指针。
+        const interactive =
+          active &&
+          (layer.id === 'building' || Boolean(POPUP_DIALOGS[layer.id]));
+        const draggable = layer.id === 'snow_rifle';
         const leftKey: PopUpHalfKey = `${layer.id}:left`;
         const rightKey: PopUpHalfKey = `${layer.id}:right`;
 
@@ -1738,6 +2904,7 @@ function PopUpScene({
           >
             <CardHalf
               geometry={panel.left}
+              hitLayerId={layer.id}
               hitGeometry={panel.hitLeft}
               materials={card}
               groupRef={cardSetters[leftKey]}
@@ -1745,9 +2912,14 @@ function PopUpScene({
               onPointerOver={handlePointerOver}
               onPointerOut={handlePointerOut}
               onClick={(event) => handleClick(event, layer)}
+              onPointerDown={draggable ? handleRiflePointerDown : undefined}
+              onPointerMove={draggable ? handleRiflePointerMove : undefined}
+              onPointerUp={draggable ? endRifleDrag : undefined}
+              onPointerCancel={draggable ? endRifleDrag : undefined}
             />
             <CardHalf
               geometry={panel.right}
+              hitLayerId={layer.id}
               hitGeometry={panel.hitRight}
               materials={card}
               groupRef={cardSetters[rightKey]}
@@ -1755,10 +2927,16 @@ function PopUpScene({
               onPointerOver={handlePointerOver}
               onPointerOut={handlePointerOut}
               onClick={(event) => handleClick(event, layer)}
+              onPointerDown={draggable ? handleRiflePointerDown : undefined}
+              onPointerMove={draggable ? handleRiflePointerMove : undefined}
+              onPointerUp={draggable ? endRifleDrag : undefined}
+              onPointerCancel={draggable ? endRifleDrag : undefined}
             />
           </group>
         );
       })}
+      {/* 漫天飞雪：只在雪山场景挂载，不参与任何点击拾取 */}
+      {activeScene === 'snow' && <Snowfall />}
     </group>
   );
 }
@@ -1769,10 +2947,13 @@ function PopUpScene({
  * 重新翻阅时 phase 变回 idle，组件卸载，镜头动画自动恢复。
  */
 function OrbitRig() {
-  const { phase, cinematic } = useJourneyState();
+  const { phase, cinematic, dragging } = useJourneyState();
   const size = useThree((state) => state.size);
 
-  // 推门运镜期间让出镜头控制权，弹回原位后再挂载
+  // 推门运镜期间让出镜头控制权，弹回原位后再挂载。
+  // 步枪拖拽只临时禁用控制器，不能卸载：
+  // 重新挂载时 OrbitControls 会按 target 重算朝向，整个画面会跳一下，
+  // 点击拾取也会和按下时错位。
   if (phase !== 'open' || cinematic) return null;
 
   const portrait = size.width < size.height;
@@ -1781,6 +2962,7 @@ function OrbitRig() {
   return (
     <OrbitControls
       makeDefault
+      enabled={!dragging}
       enablePan={false}
       enableDamping
       dampingFactor={0.08}
@@ -1859,6 +3041,8 @@ interface BookProps {
 
 export function Book({ onOpenDialog }: BookProps) {
   const textures = useBookTextures();
+  const { chapter } = useJourneyState();
+  const openRequest = useOpenRequest();
   const camera = useThree((state) => state.camera);
   const coverHingeRef = useRef<THREE.Group>(null);
   const leftPageRef = useRef<THREE.Object3D>(null);
@@ -1994,6 +3178,20 @@ export function Book({ onOpenDialog }: BookProps) {
     document.documentElement.style.setProperty('--book-open', '0');
   }, [resetToken, camera]);
 
+  /**
+   * 章节导航联动：
+   * 点击右侧「05 雪山草地」后，即使书还合着，也自动开卷。
+   * 直接把 spin 置满，跳过“转书一周”，让雪山八层尽快出现。
+   */
+  useEffect(() => {
+    if (openRequest <= 0) return;
+    if (phaseRef.current === 'opening' || phaseRef.current === 'open') return;
+    targetSpin.current = 1;
+    spin.current = 1;
+    markInteracted();
+    setPhase('spinning');
+  }, [openRequest, setPhase]);
+
   useFrame((state, delta) => {
     const dt = Math.min(delta, 0.05);
     const elapsed = state.clock.elapsedTime;
@@ -2121,9 +3319,12 @@ export function Book({ onOpenDialog }: BookProps) {
               <group ref={spinRef}>
                 <BookModel
                   textures={textures}
+                  chapter={chapter}
                   coverHingeRef={coverHingeRef}
                   leftPageRef={leftPageRef}
                   rightPageRef={rightPageRef}
+                  openRef={open}
+                  onOpenDialog={onOpenDialog}
                 />
                 <PopUpScene
                   openRef={open}

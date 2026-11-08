@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { BookDialog } from './components/BookDialog';
 import { Guide } from './components/Guide';
+import { HadaMagnifier } from './components/HadaMagnifier';
 import { LoadingVeil } from './components/LoadingVeil';
 import { Overlay } from './components/Overlay';
 import { BookStageChat } from './features/agent/BookStageChat';
@@ -68,6 +69,7 @@ export default function App() {
         agentOpen={agentOpen}
       />
       <Guide ready={ready} />
+      <HadaMagnifier onOpenDialog={handleOpenDialog} />
       <BookStageChat
         open={agentOpen}
         onClose={handleCloseAgent}
