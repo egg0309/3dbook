@@ -11,11 +11,12 @@ export const SITE = {
 } as const;
 
 /**
- * 章节 id。zunyi / luding / snow / hada 已经接入 3D 书本场景，
+ * 章节 id。zunyi / xiangjiang / luding / snow / hada 已经接入 3D 书本场景，
  * 其余章节保留在导航里，状态为 soon。
  */
 export type ChapterId =
   | 'zunyi'
+  | 'xiangjiang'
   | 'chishui'
   | 'jinsha'
   | 'luding'
@@ -35,7 +36,7 @@ export interface Chapter {
 
 export const CHAPTERS: Chapter[] = [
   { id: 'zunyi', index: '01', title: '遵义会议', status: 'active' },
-  { id: 'chishui', index: '02', title: '四渡赤水', status: 'soon' },
+  { id: 'xiangjiang', index: '02', title: '湘江血战', status: 'active' },
   { id: 'jinsha', index: '03', title: '巧渡金沙江', status: 'soon' },
   { id: 'luding', index: '04', title: '飞夺泸定桥', status: 'active' },
   { id: 'snow', index: '05', title: '雪山草地', status: 'active' },
@@ -72,6 +73,15 @@ const ZUNYI_META: ChapterMeta = {
 
 export const CHAPTER_META: Partial<Record<ChapterId, ChapterMeta>> = {
   zunyi: ZUNYI_META,
+  xiangjiang: {
+    index: '第二章',
+    number: 'CHAPTER 02',
+    chapter: '湘江血战',
+    chapterEn: 'THE BATTLE OF XIANGJIANG',
+    date: '1934.11.27 — 12.01',
+    location: '广西 · 湘江',
+    tagline: '向死而生的绝命后卫',
+  },
   luding: {
     index: '第四章',
     number: 'CHAPTER 04',

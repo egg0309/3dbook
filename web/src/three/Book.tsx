@@ -185,6 +185,10 @@ interface BookModelProps {
   leftPageRef: RefObject<THREE.Object3D | null>;
   /** 右页页帧：固定在页块书脊上，供立体机关读取 matrixWorld */
   rightPageRef: RefObject<THREE.Object3D | null>;
+  /** 书本翻开进度：平铺底图的点击只在完全展开后生效 */
+  openRef: RefObject<number>;
+  /** 平铺底图（湘江血水）也能点开弹窗 */
+  onOpenDialog: (title: string, content: string) => void;
 }
 
 /**
@@ -199,12 +203,14 @@ const SNOW_ENDPAPER_COLOR = '#b9cddf';
  * 章节专属的「平铺内页」底图。
  *
  * 这些图不参与立体机关（不立起来），而是直接铺在展开后的书页表面：
- *   · hada   哈达铺 —— 旧报纸
- *   · luding 飞夺泸定桥 —— 咆哮的大渡河
+ *   · hada       哈达铺 —— 旧报纸
+ *   · luding     飞夺泸定桥 —— 咆哮的大渡河
+ *   · xiangjiang 湘江血战 —— 被鲜血染红的江水
  */
 const CHAPTER_PAPER_URLS: Partial<Record<ChapterId, string>> = {
   hada: '/book/hada_news.jpg',
   luding: '/book/ld_river.png',
+  xiangjiang: '/book/xj_river.jpg',
 };
 
 interface ChapterPaper {
@@ -274,6 +280,8 @@ function BookModel({
   coverHingeRef,
   leftPageRef,
   rightPageRef,
+  openRef,
+  onOpenDialog,
 }: BookModelProps) {
   /** 章节专属的平铺内页（哈达铺报纸 / 泸定桥江水）；其余章节为 null */
   const pagePaper = useChapterPaperTexture(chapter);
@@ -466,6 +474,31 @@ function BookModel({
     };
   }, [textures, chapter, pagePaper]);
 
+  // 湘江血战：血水铺满左右两页，点击任何一处页纸都算点击底图。
+  // 其余章节不挂这些处理，保持原来的纯展示行为。
+  const paperInteractive = chapter === 'xiangjiang';
+
+  const handlePaperClick = (event: ThreeEvent<MouseEvent>) => {
+    if (!paperInteractive) return;
+    // 书没完全展开 / 正在拖拽旋转视角时不响应
+    if (openRef.current < 0.995) return;
+    if ((event.delta ?? 0) > 5) return;
+    event.stopPropagation();
+    onOpenDialog(XJ_RIVER_DIALOG.title, XJ_RIVER_DIALOG.content);
+  };
+
+  const handlePaperOver = (event: ThreeEvent<PointerEvent>) => {
+    if (!paperInteractive || openRef.current < 0.995) return;
+    event.stopPropagation();
+    document.body.style.cursor = 'pointer';
+  };
+
+  const handlePaperOut = (event: ThreeEvent<PointerEvent>) => {
+    if (!paperInteractive) return;
+    event.stopPropagation();
+    document.body.style.cursor = '';
+  };
+
   return (
     <group>
       <RoundedBox
@@ -513,6 +546,9 @@ function BookModel({
       <mesh
         position={[0, 0, PAGE_T / 2 + 0.0012]}
         material={materials.firstPage}
+        onClick={paperInteractive ? handlePaperClick : undefined}
+        onPointerOver={paperInteractive ? handlePaperOver : undefined}
+        onPointerOut={paperInteractive ? handlePaperOut : undefined}
       >
         <planeGeometry args={[PAGE_W - 0.004, PAGE_H - 0.004]} />
       </mesh>
@@ -580,6 +616,9 @@ function BookModel({
           position={[HALF_W, 0, -COVER / 2 - 0.0015]}
           rotation={[0, Math.PI, 0]}
           material={materials.endpaper}
+          onClick={paperInteractive ? handlePaperClick : undefined}
+          onPointerOver={paperInteractive ? handlePaperOver : undefined}
+          onPointerOut={paperInteractive ? handlePaperOut : undefined}
         >
           <planeGeometry args={[W - 0.05, H - 0.05]} />
         </mesh>
@@ -625,7 +664,13 @@ function BookModel({
 /* 立体书机关：书页展开后的折叠场景                                    */
 /* ------------------------------------------------------------------ */
 
-type PopUpSceneId = 'outside' | 'inside' | 'luding' | 'snow' | 'hada';
+type PopUpSceneId =
+  | 'outside'
+  | 'inside'
+  | 'xiangjiang'
+  | 'luding'
+  | 'snow'
+  | 'hada';
 type PopUpLayerId =
   | 'building'
   | 'bear'
@@ -634,7 +679,13 @@ type PopUpLayerId =
   | 'zunyi_crates'
   | 'zunyi_stove'
   | 'zunyi_bag'
+  | 'xj_rearguard'
+  | 'xj_shore'
+  | 'xj_bear'
   | 'ld_bridge'
+  | 'ld_anchor_left'
+  | 'ld_anchor_right'
+  | 'ld_splash'
   | 'ld_boat'
   | 'snow_bg'
   | 'snow_pile'
@@ -774,11 +825,33 @@ const POPUP_SOURCES: Record<PopUpLayerId, PopUpSource> = {
     url: '/book/zunyi_bag.jpg',
     preserveFrame: true,
   },
+  // 湘江血战：血水底图同样平铺在书页上（见 CHAPTER_PAPER_URLS）；
+  // 对岸阻击阵地 / 近岸土坎 / 老陈都是黑底单物件，按非透明内容裁切。
+  xj_rearguard: {
+    url: '/book/xj_rearguard.jpg',
+  },
+  xj_shore: {
+    url: '/book/xj_shore.jpg',
+  },
+  xj_bear: {
+    url: '/book/xj_bear.jpg',
+  },
   // 飞夺泸定桥：江水已经改为平铺在书页上的底图（见 CHAPTER_PAPER_URLS），
-  // 不再作为立体图层；铁链和战士保留整幅画框，小船单独抠图。
+  // 不再作为立体图层；铁链和战士保留整幅画框。
+  // 左右桥台 / 小船 / 水花都是黑底单物件，按非透明内容裁切，
+  // 让各自以合适的尺寸立在页面上。
   ld_bridge: {
     url: '/book/ld_bridge.jpg',
     preserveFrame: true,
+  },
+  ld_anchor_left: {
+    url: '/book/ld_anchor_left.jpg',
+  },
+  ld_anchor_right: {
+    url: '/book/ld_anchor_right.jpg',
+  },
+  ld_splash: {
+    url: '/book/ld_splash.jpg',
   },
   ld_boat: {
     url: '/book/ld_boat.jpg',
@@ -860,10 +933,35 @@ const POPUP_DIALOGS: Partial<Record<PopUpLayerId, PopUpDialog>> = {
     content:
       '行囊还没来得及放下，里面塞满了文件和电报。会议一旦结束，他们随时准备背起行囊，再次冲入风雪之中。',
   },
+  xj_rearguard: {
+    title: '断后的兄弟',
+    content:
+      '为了掩护主力过江，红三十四师的兄弟们死死钉在阵地上。这一别，就是永别。',
+  },
+  xj_shore: {
+    title: '满目疮痍',
+    content:
+      '渡口边散落着残破的辎重和草鞋。大搬家式的转移，让队伍付出了极其惨痛的代价。',
+  },
+  xj_bear: {
+    title: '老陈的眼泪',
+    content:
+      '老陈捂着脸，泣不成声：“八万六千人啊……过了江，就只剩三万了……”',
+  },
   ld_bridge: {
     title: '血肉铸就的通道',
     content:
       '桥板被敌人抽走，只剩下十三根冰冷的铁索。二十二名勇士一手攀着铁索，一手拿着枪，在枪林弹雨中硬是蹚出了一条生路。',
+  },
+  ld_anchor_left: {
+    title: '大渡河天险',
+    content:
+      '对岸的桥板被抽空，只剩下光秃秃的铁索连着两岸的桥台。红军无路可退。',
+  },
+  ld_anchor_right: {
+    title: '大渡河天险',
+    content:
+      '对岸的桥板被抽空，只剩下光秃秃的铁索连着两岸的桥台。红军无路可退。',
   },
   ld_boat: {
     title: '金沙江的奇迹',
@@ -920,6 +1018,16 @@ const POPUP_DIALOGS: Partial<Record<PopUpLayerId, PopUpDialog>> = {
     content:
       '报纸上印着：“朱毛残部流窜川康，已溃不成军。”但这上面，藏着决定红军命运的情报。',
   },
+};
+
+/**
+ * 湘江的血水是平铺在书页上的底图（见 CHAPTER_PAPER_URLS），
+ * 没有立体纸板可以挂弹窗，所以让左右两页纸面本身承担这一条点击。
+ */
+const XJ_RIVER_DIALOG: PopUpDialog = {
+  title: '血染湘江',
+  content:
+    '冰冷的江水被鲜血染成了红色。数万红军将士的英魂，永远留在了这里。',
 };
 
 interface PopUpLayerConfig {
@@ -1034,22 +1142,78 @@ const POPUP_LAYERS: PopUpLayerConfig[] = [
     angle: 0.26,
     fold: 'out',
   },
+  // 湘江血战：血水已经平铺在书页上（见 CHAPTER_PAPER_URLS），
+  // 对岸阻击阵地用山谷折立在远处，近岸土坎和老陈依次压到前景。
+  {
+    id: 'xj_rearguard',
+    scene: 'xiangjiang',
+    z: -0.8,
+    halfWidth: PAGE_W * 0.5,
+    angle: 0.25,
+    fold: 'in',
+  },
+  {
+    id: 'xj_shore',
+    scene: 'xiangjiang',
+    z: 0.1,
+    halfWidth: 0.6,
+    offsetX: 1.0,
+    angle: 0.2,
+    fold: 'out',
+  },
+  {
+    id: 'xj_bear',
+    scene: 'xiangjiang',
+    z: 0.5,
+    halfWidth: 0.5,
+    offsetX: -0.9,
+    angle: 0.2,
+    fold: 'out',
+  },
   // 飞夺泸定桥：江水已经平铺在书页上（见 CHAPTER_PAPER_URLS），
-  // 不再立起来；铁链与战士横跨跨页，小船放在右下角前景。
+  // 不再立起来；铁链与战士横跨跨页，
+  // 左右桥台立在两页外侧，水花压在最前面，小船放在右下角。
   {
     id: 'ld_bridge',
     scene: 'luding',
-    z: 0,
-    halfWidth: PAGE_W * 0.9,
+    z: 0.1,
+    halfWidth: PAGE_W * 0.8,
     offsetX: 0,
     angle: 0.2,
     fold: 'out',
   },
   {
+    id: 'ld_anchor_left',
+    scene: 'luding',
+    z: 0.1,
+    halfWidth: 0.5,
+    offsetX: -1.2,
+    angle: 0.2,
+    fold: 'out',
+  },
+  {
+    id: 'ld_anchor_right',
+    scene: 'luding',
+    z: 0.1,
+    halfWidth: 0.5,
+    offsetX: 1.2,
+    angle: 0.2,
+    fold: 'out',
+  },
+  {
+    id: 'ld_splash',
+    scene: 'luding',
+    z: -0.1,
+    halfWidth: 1.5,
+    offsetX: 0,
+    angle: 0.3,
+    fold: 'out',
+  },
+  {
     id: 'ld_boat',
     scene: 'luding',
-    z: 0.3,
-    halfWidth: 0.8,
+    z: 0.7,
+    halfWidth: 0.5,
     offsetX: 0.6,
     angle: 0.3,
     fold: 'out',
@@ -1838,7 +2002,9 @@ function PopUpScene({
         ? 'hada'
         : chapter === 'luding'
           ? 'luding'
-          : roomStage;
+          : chapter === 'xiangjiang'
+            ? 'xiangjiang'
+            : roomStage;
   const camera = useThree((state) => state.camera);
   const viewport = useThree((state) => state.size);
   const bookScale = viewport.width < viewport.height ? 0.52 : 1;
@@ -2483,10 +2649,12 @@ function PopUpScene({
         if (!panel || !card) return null;
 
         const active = activeScene === layer.scene;
-        // 遵义室内背景墙只做背景，不参与悬停 / 点击；
-        // 雪山八层都要绑定各自文案，所以 snow_bg 也保持可点击。
+        // 有弹窗文案的图层才参与悬停 / 点击；
+        // building 是「门」，没有普通弹窗但要走推门运镜，单独保留；
+        // 室内背景墙、泸定桥水花这类纯装饰层不响应指针。
         const interactive =
-          active && (layer.scene === 'snow' || layer.id !== 'roomBg');
+          active &&
+          (layer.id === 'building' || Boolean(POPUP_DIALOGS[layer.id]));
         const draggable = layer.id === 'snow_rifle';
         const leftKey: PopUpHalfKey = `${layer.id}:left`;
         const rightKey: PopUpHalfKey = `${layer.id}:right`;
@@ -2918,6 +3086,8 @@ export function Book({ onOpenDialog }: BookProps) {
                   coverHingeRef={coverHingeRef}
                   leftPageRef={leftPageRef}
                   rightPageRef={rightPageRef}
+                  openRef={open}
+                  onOpenDialog={onOpenDialog}
                 />
                 <PopUpScene
                   openRef={open}
