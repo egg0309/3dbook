@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
+    "build:home": "node ../scripts/build-home.mjs",
     "assets:backdrops": "node scripts/prepare-backdrops.mjs ../photo"
   },
   "dependencies": {

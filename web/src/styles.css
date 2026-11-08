@@ -151,6 +151,29 @@ button {
   background: var(--line);
 }
 
+.home-entry {
+  position: fixed;
+  top: clamp(58px, 8.4vh, 84px);
+  right: clamp(16px, 3.6vw, 56px);
+  z-index: 20;
+  pointer-events: auto;
+  padding: 7px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(20, 14, 10, 0.55);
+  backdrop-filter: blur(6px);
+  color: var(--paper-dim);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-decoration: none;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.home-entry:hover {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
 .chapter-meta {
   position: absolute;
   left: clamp(20px, 3.6vw, 56px);

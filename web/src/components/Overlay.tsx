@@ -149,6 +149,10 @@ export function Overlay({ ready, onOpenAgent, agentOpen }: OverlayProps) {
         </div>
       </header>
 
+      <a className="home-entry" href="/home/">
+        长征首页
+      </a>
+
       <aside className="chapter-rail" data-intro aria-label="长征章节">
         <p className="rail-label">LONG MARCH · 1935</p>
         <ol>
