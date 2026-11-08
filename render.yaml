@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: changzheng-agent
+    runtime: python
+    rootDir: server
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.19
+      - key: DEEPSEEK_MODEL
+        value: deepseek-chat
+      - key: LLM_TIMEOUT
+        value: "30"
+      - key: DEEPSEEK_API_KEY
+        sync: false

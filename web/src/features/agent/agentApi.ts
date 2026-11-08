@@ -13,7 +13,7 @@ export const AGENT_MODE: AgentMode =
 export const AGENT_API_URL =
   import.meta.env.VITE_AGENT_API_URL || '/api/chat';
 
-const TIMEOUT_MS = 12000;
+const TIMEOUT_MS = Number(import.meta.env.VITE_AGENT_TIMEOUT_MS) || 12000;
 
 const VALID_STAGES: AgentStage[] = [
   'level1',
