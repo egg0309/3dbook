@@ -34,7 +34,7 @@ const CLUE_DIALOG = {
 } as const;
 
 interface HadaMagnifierProps {
-  onOpenDialog: (title: string, content: string) => void;
+  onOpenDialog: (id: string, title: string, content: string) => void;
 }
 
 export function HadaMagnifier({ onOpenDialog }: HadaMagnifierProps) {
@@ -128,7 +128,7 @@ export function HadaMagnifier({ onOpenDialog }: HadaMagnifierProps) {
         setFound(true);
         setTracking(false);
         document.body.style.cursor = '';
-        onOpenDialog(CLUE_DIALOG.title, CLUE_DIALOG.content);
+        onOpenDialog('hadapu_clue', CLUE_DIALOG.title, CLUE_DIALOG.content);
       }
     };
 

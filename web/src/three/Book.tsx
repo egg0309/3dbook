@@ -187,8 +187,8 @@ interface BookModelProps {
   rightPageRef: RefObject<THREE.Object3D | null>;
   /** 书本翻开进度：平铺底图的点击只在完全展开后生效 */
   openRef: RefObject<number>;
-  /** 平铺底图（湘江血水）也能点开弹窗 */
-  onOpenDialog: (title: string, content: string) => void;
+  /** 平铺底图（湘江血水）也能点开弹窗，id 取章节标识 */
+  onOpenDialog: (id: string, title: string, content: string) => void;
 }
 
 /**
@@ -525,7 +525,7 @@ function BookModel({
     if (openRef.current < 0.995) return;
     if ((event.delta ?? 0) > 5) return;
     event.stopPropagation();
-    onOpenDialog(paperDialog.title, paperDialog.content);
+    onOpenDialog(chapter, paperDialog.title, paperDialog.content);
   };
 
   const handlePaperOver = (event: ThreeEvent<PointerEvent>) => {
