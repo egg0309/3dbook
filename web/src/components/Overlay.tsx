@@ -1,12 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { animate, stagger } from 'animejs';
 import type { AnimationParams } from 'animejs';
-import { CHAPTERS, SITE, getChapterMeta } from '../config';
-import {
-  resetJourney,
-  setChapter,
-  useJourneyState,
-} from '../journey';
+import { SITE, getChapterMeta } from '../config';
+import { resetJourney, useJourneyState } from '../journey';
 
 interface OverlayProps {
   ready: boolean;
@@ -152,40 +148,6 @@ export function Overlay({ ready, onOpenAgent, agentOpen }: OverlayProps) {
       <a className="home-entry" href="/home/">
         长征首页
       </a>
-
-      <aside className="chapter-rail" data-intro aria-label="长征章节">
-        <p className="rail-label">LONG MARCH · 1935</p>
-        <ol>
-          {CHAPTERS.map((item) => {
-            const available = item.status === 'active';
-            const selected = item.id === chapter;
-            return (
-              <li
-                key={item.id}
-                data-active={selected}
-                data-available={available}
-                data-status={item.status}
-                aria-current={selected ? 'step' : undefined}
-              >
-                <button
-                  type="button"
-                  className="rail-item"
-                  data-ui
-                  disabled={!available}
-                  aria-label={`${item.index} ${item.title}`}
-                  onClick={() => setChapter(item.id)}
-                >
-                  <span className="rail-index">{item.index}</span>
-                  <span className="rail-title">{item.title}</span>
-                  <span className="rail-status">
-                    {selected ? '阅读中' : available ? '可阅读' : '筹备中'}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-      </aside>
 
       <section className="chapter-meta" data-intro>
         <p className="meta-index">

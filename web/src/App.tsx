@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BookDialog } from './components/BookDialog';
 import { Guide } from './components/Guide';
 import { HadaMagnifier } from './components/HadaMagnifier';
@@ -6,6 +6,7 @@ import { LoadingVeil } from './components/LoadingVeil';
 import { Overlay } from './components/Overlay';
 import { BookStageChat } from './features/agent/BookStageChat';
 import { HOTSPOT_IDS, type HotspotId } from './features/agent/script';
+import { requestOpen } from './journey';
 import { Scene } from './three/Scene';
 import './styles.css';
 
@@ -34,8 +35,26 @@ export default function App() {
   const [visitedHotspots, setVisitedHotspots] = useState<ReadonlySet<string>>(
     new Set(),
   );
+  const autoOpenedRef = useRef(false);
 
   const handleReady = useCallback(() => setReady(true), []);
+
+  // React 首帧绘制后，移除 index.html 里的内联启动加载页（LoadingVeil 视觉接管）
+  useEffect(() => {
+    const boot = document.getElementById('boot-loader');
+    if (!boot) return;
+    boot.classList.add('bl-hide');
+    const timer = window.setTimeout(() => boot.remove(), 650);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // 场景就绪后自动翻开遵义会议，跳过合封转书；只触发一次，「重新翻阅」不受影响
+  useEffect(() => {
+    if (!ready || autoOpenedRef.current) return;
+    autoOpenedRef.current = true;
+    const timer = window.setTimeout(requestOpen, 900);
+    return () => window.clearTimeout(timer);
+  }, [ready]);
   const handleOpenAgent = useCallback(() => setAgentOpen(true), []);
   const handleCloseAgent = useCallback(() => setAgentOpen(false), []);
 
@@ -59,7 +78,7 @@ export default function App() {
   }, []);
 
   return (
-    <main className="stage">
+    <main className="stage" data-agent-open={agentOpen ? 'true' : 'false'}>
       <Scene onReady={handleReady} onOpenDialog={handleOpenDialog} />
       <div className="vignette" aria-hidden="true" />
       <div className="grain" aria-hidden="true" />

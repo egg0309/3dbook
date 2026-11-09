@@ -1,0 +1,72 @@
+{
+  "generated_at": "2026-11-09T19:10:35",
+  "scores_file": "C:\\Users\\32800\\Desktop\\易班\\test\\02_人工执行\\01_L2_人工评分\\评分表.csv",
+  "rows": 150,
+  "unscored_rows": 0,
+  "dimensions": {
+    "fact_fidelity": {
+      "pass": 142,
+      "total": 150,
+      "rate": 0.9467,
+      "gate": 0.95,
+      "meets": false
+    },
+    "format_ok": {
+      "pass": 125,
+      "total": 150,
+      "rate": 0.8333,
+      "gate": 0.95,
+      "meets": false
+    },
+    "persona_ok": {
+      "pass": 149,
+      "total": 150,
+      "rate": 0.9933,
+      "gate": 0.9,
+      "meets": true
+    },
+    "guidance_ok": {
+      "pass": 150,
+      "total": 150,
+      "rate": 1.0,
+      "gate": 0.9,
+      "meets": true
+    }
+  },
+  "samples_stable": [
+    "F1-1A",
+    "F1-1D",
+    "F2-2A",
+    "F3-3B",
+    "F3-3C",
+    "F3-3D",
+    "RV-seeker",
+    "RV-growing",
+    "RV-cautious",
+    "RV-warm",
+    "QA-01",
+    "QA-02",
+    "QA-03",
+    "QA-04",
+    "QA-05",
+    "QA-06",
+    "QA-08",
+    "QA-09",
+    "QA-10",
+    "QA-12",
+    "QA-13",
+    "QA-14"
+  ],
+  "samples_unstable": [
+    "F1-1B",
+    "F1-1C",
+    "F2-2B",
+    "F2-2C",
+    "F2-2D",
+    "F3-3A",
+    "QA-07",
+    "QA-11"
+  ],
+  "overall": "FAIL",
+  "gate_note": "判定口径见 评分规则.md：四维全 1 为通过；5 次采样至少 4 次通过才稳定"
+}

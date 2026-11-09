@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useJourneyState } from '../journey';
 
-const NEWS_URL = '/book/hada_news.jpg';
-const FRAME_URL = '/book/hada_magnifier.png';
+const NEWS_URL = '/book/hada_news.webp';
+const FRAME_URL = '/book/hada_magnifier.webp';
 
 /**
  * 放大镜贴图（1672×941）里透镜圆心的位置与半径。

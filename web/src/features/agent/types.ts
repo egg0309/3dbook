@@ -15,6 +15,8 @@ export interface AgentChoices {
 
 export interface AgentTurnRequest {
   sessionId: string;
+  /** 浏览器持久匿名编号，后端用于把多次测试归到同一人 */
+  clientId?: string;
   /** 当前玩家正在回答的关卡；复盘时为 review */
   stage: AgentStage;
   /** 点击选项卡片时发送 */

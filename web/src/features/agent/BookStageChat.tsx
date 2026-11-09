@@ -2,10 +2,13 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   EXPLORE_OPENING,
   HOTSPOT_IDS,
+  LEVEL_BRIEFS,
   LEVELS,
+  POST_MEETING_BRIEF,
   STAGE_INDEX,
   optionLabel,
 } from './script';
+import { sendSessionStart } from './agentApi';
 import { useAgent } from './useAgent';
 import type { AgentOption, ChoiceCode } from './types';
 import './bookStageChat.css';
@@ -51,6 +54,7 @@ export function BookStageChat({
   const [phase, setPhase] = useState<ChatPhase>('explore');
   const everExploredRef = useRef(false);
   const atEndRef = useRef(true);
+  const startedSessionRef = useRef<string | null>(null);
 
   const exploreTyper = useTypewriter(EXPLORE_OPENING);
   const allVisited = visitedHotspots.length >= totalHotspots;
@@ -73,6 +77,14 @@ export function BookStageChat({
   useEffect(() => {
     if (atEndRef.current) setViewIndex(visible.length - 1);
   }, [visible.length]);
+
+  // 进入推演即打点开始时间；每个会话只发一次，重新推演换新 sessionId 后会再发
+  useEffect(() => {
+    if (phase !== 'drama') return;
+    if (startedSessionRef.current === agent.sessionId) return;
+    startedSessionRef.current = agent.sessionId;
+    sendSessionStart(agent.sessionId);
+  }, [phase, agent.sessionId]);
 
   const { shown, done: typingDone } = useTypewriter(current?.text ?? '');
 
@@ -174,7 +186,7 @@ export function BookStageChat({
         <section className="bsc-stage">
           <img
             className="bsc-mascot"
-            src="/book/laoduizhang.png"
+            src="/book/laoduizhang.webp"
             alt="向导老队长（易班熊）"
           />
           <button
@@ -306,12 +318,28 @@ export function BookStageChat({
                       </button>
                     ))}
                   </div>
+                  <details className="bsc-level-brief">
+                    <summary>{LEVEL_BRIEFS[agent.currentLevel.stage].headline}</summary>
+                    <ul>
+                      {LEVEL_BRIEFS[agent.currentLevel.stage].items.map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  </details>
                 </div>
               )}
 
               {showReviewCard && (
                 <div className="bsc-right">
                   <div className="bsc-review-card">
+                    <div className="bsc-brief">
+                      <p className="bsc-brief-title">会后通报 · 史实要点</p>
+                      <ul>
+                        {POST_MEETING_BRIEF.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    </div>
                     <p className="bsc-review-title">
                       三关已过，要不要看看这一路的选择照出了怎样的你？
                     </p>

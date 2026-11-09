@@ -2,25 +2,40 @@ import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 
-// /home 是构建后放入 public/home 的首页子站；目录 URL 会被 SPA 回退截走，
-// 显式改写到它的 index.html，保留 /home/ 这个干净网址
+// 入口编排：根路径 / 302 到长征首页子站 /home/（首页产物用相对路径，
+// 必须落在 /home/ 下资源才能解析）；立体书展馆改由 /zunyi 进入，
+// 目录 URL 会被 SPA 回退截走，这里显式改写到对应 index.html
+function entryMiddleware(
+  req: { url?: string },
+  res: {
+    statusCode: number
+    setHeader: (name: string, value: string) => void
+    end: () => void
+  },
+  next: () => void,
+) {
+  const path = (req.url ?? '/').split('?')[0]
+  if (path === '/') {
+    res.statusCode = 302
+    res.setHeader('Location', '/home/')
+    res.end()
+    return
+  }
+  if (path === '/home' || path === '/home/') {
+    req.url = '/home/index.html'
+  } else if (path === '/zunyi' || path === '/zunyi/') {
+    req.url = '/index.html'
+  }
+  next()
+}
+
 const homeSubpath: Plugin = {
   name: 'home-subpath-rewrite',
   configureServer(server) {
-    server.middlewares.use((req, _res, next) => {
-      if (req.url === '/home' || req.url === '/home/') {
-        req.url = '/home/index.html'
-      }
-      next()
-    })
+    server.middlewares.use(entryMiddleware)
   },
   configurePreviewServer(server) {
-    server.middlewares.use((req, _res, next) => {
-      if (req.url === '/home' || req.url === '/home/') {
-        req.url = '/home/index.html'
-      }
-      next()
-    })
+    server.middlewares.use(entryMiddleware)
   },
 }
 
@@ -41,8 +56,34 @@ export default defineConfig(({ mode }) => {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
     },
-    // 内网穿透域名白名单（内测用）：localtunnel 与 cloudflare quick tunnel
-    server: { proxy, allowedHosts: ['.loca.lt', '.trycloudflare.com'] },
-    preview: { proxy, allowedHosts: ['.loca.lt', '.trycloudflare.com'] },
+    // 内网穿透域名白名单（内测用）
+    server: {
+      proxy,
+      allowedHosts: [
+        '.loca.lt',
+        '.trycloudflare.com',
+        '.lhr.life',
+        '.pinggy.link',
+        '.pinggy-free.link',
+        '.pinggy.net',
+        '.natappfree.cc',
+        '.natapp1.cc',
+        '.natapp4.cc',
+      ],
+    },
+    preview: {
+      proxy,
+      allowedHosts: [
+        '.loca.lt',
+        '.trycloudflare.com',
+        '.lhr.life',
+        '.pinggy.link',
+        '.pinggy-free.link',
+        '.pinggy.net',
+        '.natappfree.cc',
+        '.natapp1.cc',
+        '.natapp4.cc',
+      ],
+    },
   }
 })

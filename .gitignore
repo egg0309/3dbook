@@ -30,6 +30,16 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# ===== 本地测试记录（匿名作答/时长，禁止入库）=====
+*.db
+*.db-wal
+*.db-shm
+**/data/export-*.csv
+**/data/export-*.html
+
+# ===== 图像压缩前的原图备份 =====
+web/.asset-backup/
+
 # ===== 编辑器 / 操作系统 =====
 .vscode/*
 !.vscode/extensions.json

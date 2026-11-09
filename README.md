@@ -10,6 +10,8 @@
 - [x] 滚轮转动书身一整圈（360°），随后书本自动、缓慢展开；支持触屏拖动、键盘方向键、上一页重置。
 - [x] 打开后为“左内衬页 + 右空白页”的跨页：左页是一张做旧的长征路线地图，右页留白，标注“历史推演已就绪”。
 - [x] 历史推演智能体前端：三关单选、自由输入兜底、个性化复盘报告、错误重试；内置 Mock 可完整演示，也可通过环境变量接入真实 `/api/chat`。
+- [x] 智能体后端（FastAPI）按契约实现 `/api/chat`：三关反馈、复盘、模型故障降级，并匿名记录测试行为数据。
+- [x] Docker Compose 一键部署：Nginx 托管前端并反向代理 `/api`，FastAPI 后端独立容器。
 - [x] 背景循环 8 张遵义/长征电影感画面，采用 Halftone 半调网点 + 做旧棕褐色调 + 指针悬停显影的过渡效果。
 - [x] 完整的平台视觉框架：顶部品牌、章节导航、章节信息、进度提示、加载幕、移动端适配。
 - [x] 程序化占位材质 + AI 美术资产插槽（封面/封底/布纹/内衬页/纸纹/书口），替换不需要改代码。
@@ -40,23 +42,29 @@
 ## 目录结构
 
 ```
-易班_1/
+3dbook/
 ├─ web/                     # 前端工程（主入口）
 │  ├─ src/three/            # 3D：书本、背景着色器、灯光、尘埃
 │  ├─ src/components/       # DOM：标题层、加载幕
-│  ├─ src/features/agent/   # 历史推演：面板、状态机、Mock/真实接口
-│  ├─ src/config.ts         # 品牌、章节、美术资产槽位、节奏参数
-│  ├─ src/journey.ts        # 滚轮/展开状态机
-│  ├─ public/book/          # 把 AI 美术资产放这里（当前为空）
-│  ├─ scripts/              # 背景图压缩脚本
-│  ├─ .env.example          # Agent Mock/Live 环境变量样例
-│  └─ components.json       # ReactBits / shadcn 注册表
-├─ photo/                   # 8 张原始背景图（之后新增背景也放这里）
-├─ anime/                   # anime.js 源码仓库（已构建）
+│  ├─ src/features/agent/   # 历史推演：状态机、Mock/真实接口
+│  ├─ public/book/          # 把 AI 美术资产放这里
+│  ├─ Dockerfile            # 前端构建 + Nginx 静态站
+│  └─ .env.example          # Agent Mock/Live 环境变量样例
+├─ server/                  # 智能体后端（FastAPI）
+│  ├─ app/                  # 路由、适配层、LLM 调用、匿名测试记录
+│  ├─ data/                 # script.json、knowledge.json
+│  ├─ Dockerfile
+│  └─ .env.example          # DEEPSEEK_API_KEY 等后端配置
+├─ tests/                   # 四层测试工程（L1 契约 / L2 生成 / L3 红队 / L4 真人）
+├─ 首页/                     # 长征首页子站（构建后进入 web/public/home）
+├─ deploy/nginx.conf        # 生产反向代理与入口路由
 ├─ docs/
 │  ├─ ART_ASSET_PROMPTS.md  # 外包美术用的完整提示词包
 │  ├─ AGENT_INTEGRATION.md  # 智能体前端对接契约
+│  ├─ TEST_DATA_DESIGN.md   # 测试数据设计方案
 │  └─ preview/              # 预览截图
+├─ docker-compose.yml       # 一键起前端 + 后端
+├─ .env.example             # Compose 环境变量模板
 └─ README.md
 ```
 
@@ -85,6 +93,48 @@ npm run preview
 cd web
 npm run assets:backdrops
 ```
+
+## 启动智能体后端（本地）
+
+```bash
+cd server
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+# source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env          # 填入 DEEPSEEK_API_KEY
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+未配置有效的 `DEEPSEEK_API_KEY` 时进入本地模拟模式，不发起真实模型调用。前端在 `web/.env.local` 设置 `VITE_AGENT_MODE=live` 与 `VITE_AGENT_PROXY_TARGET=http://127.0.0.1:8000` 即可联调。
+
+## Docker 一键部署
+
+```bash
+cp .env.example .env          # 根目录，填入 DEEPSEEK_API_KEY
+docker compose up -d --build
+```
+
+打开 `http://localhost:8080`。
+
+- `web` 容器：构建 `web/` 并由 Nginx 托管，`/api/*` 反向代理到 `api` 服务。
+- `api` 容器：FastAPI + Uvicorn，健康检查走 `/api/health`。
+- 匿名测试记录使用 SQLite，存放在命名卷 `agent-data`；更新 `script.json` / `knowledge.json` 后如需清空旧数据：`docker compose down -v`。
+- 只启动后端：`docker compose up -d --build api`。
+
+## 测试
+
+L1 确定性契约测试不依赖网络和模型：
+
+```bash
+cd tests
+pip install -r requirements.txt
+python -m pytest
+```
+
+四层测试的设计、人工评分表与施测材料见 [`tests/测试工作目录.md`](tests/测试工作目录.md) 与 [`docs/TEST_DATA_DESIGN.md`](docs/TEST_DATA_DESIGN.md)。
 
 ## 交互说明
 
@@ -130,12 +180,12 @@ npm run assets:backdrops
 - 下一章可以复用 `Book` 的封面/开合逻辑，替换 `BOOK_ASSETS` 与书页内容；建议后续引入 React Router，把每一章做成独立路由（`/chapter/zunyi`、`/chapter/chishui`…）。
 - 书页内容区目前是右侧空白页 + 左侧地图内衬；做内容时可在右侧页面加一层 `Html` / `Text` / 平面贴图，并替换左侧“历史推演已就绪”状态条。
 
-### 2. 智能体后端（剩余工作）
+### 2. 智能体后端
 
-- 前端部分已完成，代码在 `web/src/features/agent/`；接口契约见 `docs/AGENT_INTEGRATION.md`。
-- 后端按契约实现 `POST /api/chat`，把 `stage` + `choice` 路由到源文档里对应的 LLM Prompt；复盘时使用 `choices` 生成 250 字以内的报告。
-- 后端跑起来后，在 `web/.env.local` 设置 `VITE_AGENT_MODE=live` 和 `VITE_AGENT_PROXY_TARGET`，重启即可；页面底部徽标会显示“在线推演”。
-- 后续可补：流式输出、`sessionStorage` 续玩、后端会话持久化、语音输入、多 NPC、内容审核与限流。
+- 已实现：`server/` 按契约提供 `POST /api/chat`，三关反馈与复盘走 `script.json` 中的 Prompt，模型故障时静默回退基准文案；匿名测试记录写入 SQLite，便于 L4 数据统计。
+- 接口字段、阶段流转、错误/兜底约定、测试清单见 `docs/AGENT_INTEGRATION.md`。
+- 部署：根目录 `docker-compose.yml` 一键启动；也可只用 Render 蓝图 `render.yaml` 部署后端。
+- 后续可补：流式输出、会话持久化、内容审核、限流与成本控制。
 
 ### 3. ReactBits 官方组件
 

@@ -1,3 +1,4 @@
+import { getClientId } from './identity';
 import { NEXT_STAGE } from './script';
 import type {
   AgentStage,
@@ -12,6 +13,8 @@ export const AGENT_MODE: AgentMode =
 
 export const AGENT_API_URL =
   import.meta.env.VITE_AGENT_API_URL || '/api/chat';
+
+const SESSION_START_URL = AGENT_API_URL.replace(/\/chat$/, '/session/start');
 
 const TIMEOUT_MS = Number(import.meta.env.VITE_AGENT_TIMEOUT_MS) || 12000;
 
@@ -92,7 +95,7 @@ export async function sendAgentTurn(
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify(request),
+      body: JSON.stringify({ ...request, clientId: getClientId() }),
       signal: controller.signal,
     });
 
@@ -116,4 +119,15 @@ export async function sendAgentTurn(
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+/** 进入推演时打点，后端据此记开始时间；失败静默，不影响界面 */
+export function sendSessionStart(sessionId: string): void {
+  if (AGENT_MODE !== 'live') return;
+  void fetch(SESSION_START_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, clientId: getClientId() }),
+    keepalive: true,
+  }).catch(() => {});
 }

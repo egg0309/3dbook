@@ -278,102 +278,6 @@ button {
   box-shadow: 0 0 8px rgba(208, 64, 47, 0.7);
 }
 
-.chapter-rail {
-  position: absolute;
-  top: 50%;
-  right: clamp(20px, 3.6vw, 56px);
-  width: 174px;
-  translate: 0 -50%;
-  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.9);
-}
-
-.rail-label {
-  margin: 0 0 14px;
-  font-size: 8px;
-  letter-spacing: 0.28em;
-  color: var(--paper-dim);
-  opacity: 0.65;
-}
-
-.chapter-rail ol {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border-bottom: 1px solid var(--line);
-}
-
-.chapter-rail li {
-  border-top: 1px solid var(--line);
-  color: var(--paper-dim);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  opacity: 0.52;
-}
-
-.rail-item {
-  display: grid;
-  grid-template-columns: 24px 1fr auto;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 11px 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  text-align: left;
-  cursor: pointer;
-  /* overlay 默认 pointer-events: none，章节导航必须单独放行 */
-  pointer-events: auto;
-}
-
-.rail-item:disabled {
-  cursor: default;
-}
-
-.rail-item:focus-visible {
-  outline: 1px solid var(--gold);
-  outline-offset: 2px;
-}
-
-.chapter-rail li[data-available="true"]:not([data-active="true"]):hover {
-  color: var(--paper);
-  opacity: 0.88;
-}
-
-.chapter-rail li[data-active="true"] {
-  color: var(--paper);
-  opacity: 1;
-}
-
-.chapter-rail li[data-active="true"] .rail-index {
-  color: var(--red-bright);
-}
-
-.chapter-rail li[data-active="true"] .rail-title {
-  font-family: var(--font-serif);
-  font-size: 13px;
-  letter-spacing: 0.16em;
-}
-
-.rail-index {
-  color: rgba(232, 220, 196, 0.5);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-}
-
-.rail-status {
-  font-size: 8px;
-  letter-spacing: 0.08em;
-  opacity: 0.55;
-}
-
-.chapter-rail li[data-active="true"] .rail-status {
-  color: var(--gold);
-  opacity: 0.9;
-}
-
 .journey-ui {
   position: absolute;
   left: 50%;
@@ -1109,10 +1013,6 @@ button {
 /* ---------------- responsive ---------------- */
 
 @media (max-width: 1180px) {
-  .chapter-rail {
-    display: none;
-  }
-
   .chapter-meta {
     max-width: min(340px, 48vw);
   }
@@ -1252,6 +1152,23 @@ button {
   .dialog-content {
     font-size: 12px;
     letter-spacing: 0.06em;
+  }
+
+  /* 推演面板打开：3D 画布收进上半屏，与底部对话面板上下分屏，
+     书本重心随之上移，不再被对话区遮挡；关闭面板即恢复全屏 */
+  .stage[data-agent-open='true'] .scene {
+    inset: auto;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 50vh;
+  }
+
+  /* 上半屏只保留立体书与品牌条，标题/进度/操作按钮让位于对话面板 */
+  .stage[data-agent-open='true'] .chapter-meta,
+  .stage[data-agent-open='true'] .journey-ui,
+  .stage[data-agent-open='true'] .action-bar {
+    display: none;
   }
 }
 

@@ -210,11 +210,11 @@ const SNOW_ENDPAPER_COLOR = '#b9cddf';
  *   · chishui    四渡赤水 —— 赤水河与两岸山野
  */
 const CHAPTER_PAPER_URLS: Partial<Record<ChapterId, string>> = {
-  hada: '/book/hada_news.jpg',
-  luding: '/book/ld_river.png',
-  xiangjiang: '/book/xj_river.jpg',
-  tongdao: '/book/td_map.png',
-  chishui: '/book/cs_map.jpg',
+  hada: '/book/hada_news.webp',
+  luding: '/book/ld_river.webp',
+  xiangjiang: '/book/xj_river.webp',
+  tongdao: '/book/td_map.webp',
+  chishui: '/book/cs_map.webp',
 };
 
 /**
@@ -227,8 +227,8 @@ const CHAPTER_PAPER_URLS: Partial<Record<ChapterId, string>> = {
  * 其余章节的底图仍然左右各铺一张。
  */
 const SPREAD_PAPER_URLS = new Set<string>([
-  '/book/td_map.png',
-  '/book/cs_map.jpg',
+  '/book/td_map.webp',
+  '/book/cs_map.webp',
 ]);
 
 interface ChapterPaper {
@@ -853,139 +853,137 @@ interface PopUpSource {
 }
 
 const POPUP_SOURCES: Record<PopUpLayerId, PopUpSource> = {
-  building: { url: '/book/building.png' },
-  bear: { url: '/book/bear.jpg' },
-  // 室内背景墙。需求里写的是 room_bg.jpg，仓库里实际是 room_bg.png；
-  // 优先用现有 png，日后换成 jpg 也能自动回退。
+  building: { url: '/book/building.webp' },
+  bear: { url: '/book/bear.webp' },
+  // 室内背景墙
   roomBg: {
-    url: '/book/room_bg.png',
-    fallbackUrl: '/book/room_bg.jpg',
+    url: '/book/room_bg.webp',
   },
   // 遵义会议室内四层：同一画框，从远到近叠放
   zunyi_people: {
-    url: '/book/zunyi_people.jpg',
+    url: '/book/zunyi_people.webp',
     preserveFrame: true,
   },
   zunyi_crates: {
-    url: '/book/zunyi_crates.jpg',
+    url: '/book/zunyi_crates.webp',
     preserveFrame: true,
   },
   zunyi_stove: {
-    url: '/book/zunyi_stove.jpg',
+    url: '/book/zunyi_stove.webp',
     preserveFrame: true,
   },
   zunyi_bag: {
-    url: '/book/zunyi_bag.jpg',
+    url: '/book/zunyi_bag.webp',
     preserveFrame: true,
   },
   // 湘江血战：血水底图同样平铺在书页上（见 CHAPTER_PAPER_URLS）；
   // 对岸阻击阵地 / 近岸土坎 / 老陈都是黑底单物件，按非透明内容裁切。
   xj_rearguard: {
-    url: '/book/xj_rearguard.jpg',
+    url: '/book/xj_rearguard.webp',
   },
   xj_shore: {
-    url: '/book/xj_shore.jpg',
+    url: '/book/xj_shore.webp',
   },
   xj_bear: {
-    url: '/book/xj_bear.jpg',
+    url: '/book/xj_bear.webp',
   },
   // 通道会议：地图已经改为平铺在书页上的底图（见 CHAPTER_PAPER_URLS），
   // 两侧指路 / 争论的人物和拿纸条的熊都是黑底单物件，按内容裁切。
   td_people_left: {
-    url: '/book/td_people_left.jpg',
+    url: '/book/td_people_left.webp',
   },
   td_people_right: {
-    url: '/book/td_people_right.jpg',
+    url: '/book/td_people_right.webp',
   },
   td_bear: {
-    url: '/book/td_bear.jpg',
+    url: '/book/td_bear.webp',
   },
   // 四渡赤水：赤水河已经改为平铺在书页上的底图（见 CHAPTER_PAPER_URLS），
   // 左右两座山和急电都是黑底单物件，按非透明内容裁切，
   // 分别立在两页外侧和两山之间的前景。
   cs_mountain_left: {
-    url: '/book/cs_mountain_left.jpg',
+    url: '/book/cs_mountain_left.webp',
   },
   cs_mountain_right: {
-    url: '/book/cs_mountain_right.jpg',
+    url: '/book/cs_mountain_right.webp',
   },
   cs_telegram: {
-    url: '/book/cs_telegram.jpg',
+    url: '/book/cs_telegram.webp',
   },
   // 飞夺泸定桥：江水已经改为平铺在书页上的底图（见 CHAPTER_PAPER_URLS），
   // 不再作为立体图层；铁链和战士保留整幅画框。
   // 左右桥台 / 小船 / 水花都是黑底单物件，按非透明内容裁切，
   // 让各自以合适的尺寸立在页面上。
   ld_bridge: {
-    url: '/book/ld_bridge.jpg',
+    url: '/book/ld_bridge.webp',
     preserveFrame: true,
   },
   ld_anchor_left: {
-    url: '/book/ld_anchor_left.jpg',
+    url: '/book/ld_anchor_left.webp',
   },
   ld_anchor_right: {
-    url: '/book/ld_anchor_right.jpg',
+    url: '/book/ld_anchor_right.webp',
   },
   ld_splash: {
-    url: '/book/ld_splash.jpg',
+    url: '/book/ld_splash.webp',
   },
   ld_boat: {
-    url: '/book/ld_boat.jpg',
+    url: '/book/ld_boat.webp',
   },
   // 雪山草地八层：同一台相机渲染的 1672×941 整幅分层场景图。
   // 每一层在山脊 / 草地上的位置就是最终构图，必须保留完整画框，
   // 只靠 z 轴拉开前后景深。
   snow_bg: {
-    url: '/book/snow_bg.jpg',
+    url: '/book/snow_bg.webp',
     preserveFrame: true,
   },
   snow_pile: {
-    url: '/book/snow_pile.jpg',
+    url: '/book/snow_pile.webp',
     preserveFrame: true,
   },
   snow_flag: {
-    url: '/book/snow_flag.jpg',
+    url: '/book/snow_flag.webp',
     preserveFrame: true,
   },
   snow_rifle: {
-    url: '/book/snow_rifle.jpg',
+    url: '/book/snow_rifle.webp',
     preserveFrame: true,
   },
   snow_grass: {
-    url: '/book/snow_grass.jpg',
+    url: '/book/snow_grass.webp',
     preserveFrame: true,
   },
   snow_bear: {
-    url: '/book/snow_bear.jpg',
+    url: '/book/snow_bear.webp',
     preserveFrame: true,
   },
   item_hook: {
-    url: '/book/item_hook.jpg',
+    url: '/book/item_hook.webp',
     preserveFrame: true,
   },
   item_matches: {
-    url: '/book/item_matches.jpg',
+    url: '/book/item_matches.webp',
     preserveFrame: true,
   },
   // 哈达铺：报纸是整幅背景，必须保留完整画框；
   // 老赵是抠图角色，按非透明内容裁切后贴在前景。
   hada_news: {
-    url: '/book/hada_news.jpg',
+    url: '/book/hada_news.webp',
     preserveFrame: true,
   },
   hada_bear: {
-    url: '/book/hada_bear.jpg',
+    url: '/book/hada_bear.webp',
   },
   // 三军会师：城楼 / 拥抱群像 / 老陈都是黑底单物件，
   // 按非透明内容裁切后立在不同深度上。
   hs_gate: {
-    url: '/book/hs_gate.jpg',
+    url: '/book/hs_gate.webp',
   },
   hs_hug: {
-    url: '/book/hs_hug.jpg',
+    url: '/book/hs_hug.webp',
   },
   hs_bear: {
-    url: '/book/hs_bear.jpg',
+    url: '/book/hs_bear.webp',
   },
 };
 
@@ -1946,13 +1944,46 @@ function createCutoutTexture(
   return { texture, aspect, content };
 }
 
-function usePopUpTextures() {
+/** 每个立体场景需要的图层，从 POPUP_LAYERS 派生，避免手写两份清单 */
+const LAYERS_BY_SCENE = POPUP_LAYERS.reduce(
+  (acc, layer) => {
+    (acc[layer.scene] ??= []).push(layer.id);
+    return acc;
+  },
+  {} as Record<PopUpSceneId, PopUpLayerId[]>,
+);
+
+/**
+ * 首屏只载当前章节的图层；遵义含门外/室内两幕，两幕一起预载，
+ * 推门运镜时不再等图。其余章节与场景 id 一一对应。
+ */
+function layersForChapter(chapter: ChapterId): PopUpLayerId[] {
+  if (chapter === 'zunyi') {
+    return [
+      ...(LAYERS_BY_SCENE.outside ?? []),
+      ...(LAYERS_BY_SCENE.inside ?? []),
+    ];
+  }
+  return LAYERS_BY_SCENE[chapter as PopUpSceneId] ?? [];
+}
+
+function usePopUpTextures(chapter: ChapterId) {
   const [textures, setTextures] = useState<
     Partial<Record<PopUpLayerId, CutoutTexture>>
   >({});
+  /** 已成功加载的图层，切章不卸载，回访瞬时呈现 */
+  const loadedRef = useRef<Set<PopUpLayerId>>(new Set());
+  /** 正在请求中的图层，避免章节快速来回切换时重复发请求 */
+  const loadingRef = useRef<Set<PopUpLayerId>>(new Set());
 
   useEffect(() => {
-    let cancelled = false;
+    const pending = layersForChapter(chapter).filter(
+      (id) => !loadedRef.current.has(id) && !loadingRef.current.has(id),
+    );
+    if (!pending.length) return;
+
+    let mounted = true;
+    pending.forEach((id) => loadingRef.current.add(id));
 
     const loadOne = async (id: PopUpLayerId) => {
       const source = POPUP_SOURCES[id];
@@ -1978,31 +2009,35 @@ function usePopUpTextures() {
       }
 
       try {
-        return [
-          id,
-          createCutoutTexture(image, source.preserveFrame),
-        ] as const;
+        return [id, createCutoutTexture(image, source.preserveFrame)] as const;
       } catch (error) {
         console.warn('[popup] 抠图处理失败，对应机关将保持隐藏', error);
         return null;
       }
     };
 
-    Promise.all(
-      (Object.keys(POPUP_SOURCES) as PopUpLayerId[]).map(loadOne),
-    ).then((results) => {
-      if (cancelled) return;
-      const next: Partial<Record<PopUpLayerId, CutoutTexture>> = {};
-      results.forEach((entry) => {
-        if (entry) next[entry[0]] = entry[1];
-      });
-      if (Object.keys(next).length) setTextures(next);
+    Promise.all(pending.map(loadOne)).then((results) => {
+      const fresh = results.filter(Boolean) as [
+        PopUpLayerId,
+        CutoutTexture,
+      ][];
+      if (mounted && fresh.length) {
+        setTextures((prev) => {
+          const next = { ...prev };
+          fresh.forEach(([id, texture]) => {
+            if (!prev[id]) next[id] = texture;
+          });
+          return next;
+        });
+      }
+      fresh.forEach(([id]) => loadedRef.current.add(id));
+      pending.forEach((id) => loadingRef.current.delete(id));
     });
 
     return () => {
-      cancelled = true;
+      mounted = false;
     };
-  }, []);
+  }, [chapter]);
 
   return textures;
 }
@@ -2219,8 +2254,8 @@ function PopUpScene({
   rightPageRef,
   leftPageRef,
 }: PopUpSceneProps) {
-  const textures = usePopUpTextures();
   const { chapter } = useJourneyState();
+  const textures = usePopUpTextures(chapter);
   /**
    * 遵义章节内部的「门外 / 室内」两幕。
    * 雪山 / 哈达铺不参与推门运镜，各自直接使用专属 scene。
@@ -2243,8 +2278,8 @@ function PopUpScene({
                   ? 'huishi'
                   : roomStage;
   const camera = useThree((state) => state.camera);
-  const viewport = useThree((state) => state.size);
-  const bookScale = viewport.width < viewport.height ? 0.52 : 1;
+  const portrait = useIsPortrait();
+  const bookScale = portrait ? 0.52 : 1;
 
   const rootRef = useRef<THREE.Group>(null);
   const dolly = useRef<DollyState | null>(null);
@@ -2942,13 +2977,31 @@ function PopUpScene({
 }
 
 /**
+ * 竖屏判断以窗口方向为准，而不是 R3F 画布尺寸：
+ * 手机端推演面板打开时画布只占上半屏，宽高比可能反转成“横版”，
+ * 但书本缩放与镜头预设仍应跟随手机本身的竖屏方向。
+ */
+function useIsPortrait() {
+  const [portrait, setPortrait] = useState(
+    () => window.innerWidth < window.innerHeight,
+  );
+  useEffect(() => {
+    const update = () =>
+      setPortrait(window.innerWidth < window.innerHeight);
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+  return portrait;
+}
+
+/**
  * 书完全展开后接管镜头：鼠标左键拖拽环绕整本书，滚轮拉近拉远。
  * 只在 phase === 'open' 时挂载，避免和翻书过程中的镜头动画互相抢控制权；
  * 重新翻阅时 phase 变回 idle，组件卸载，镜头动画自动恢复。
  */
 function OrbitRig() {
   const { phase, cinematic, dragging } = useJourneyState();
-  const size = useThree((state) => state.size);
+  const portrait = useIsPortrait();
 
   // 推门运镜期间让出镜头控制权，弹回原位后再挂载。
   // 步枪拖拽只临时禁用控制器，不能卸载：
@@ -2956,7 +3009,6 @@ function OrbitRig() {
   // 点击拾取也会和按下时错位。
   if (phase !== 'open' || cinematic) return null;
 
-  const portrait = size.width < size.height;
   const bookScale = portrait ? 0.52 : 1;
 
   return (
@@ -3221,7 +3273,7 @@ export function Book({ onOpenDialog }: BookProps) {
     }
 
     const openEase = open.current;
-    const portrait = state.size.width < state.size.height;
+    const portrait = window.innerWidth < window.innerHeight;
     const baseScale = portrait ? 0.8 : 1;
     const openScale = portrait ? 0.52 : 1;
     const bookScale = THREE.MathUtils.lerp(baseScale, openScale, openEase);

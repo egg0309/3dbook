@@ -91,6 +91,16 @@ export function setChapter(chapter: ChapterId) {
   emit();
 }
 
+/**
+ * 首屏自动开卷：不换章节，只 +1 openRequest，
+ * 让 Book 在场景就绪后自动转开，省去手动滚轮转书。
+ */
+export function requestOpen() {
+  if (state.phase === 'opening' || state.phase === 'open') return;
+  state = { ...state, openRequest: state.openRequest + 1 };
+  emit();
+}
+
 export function resetJourney() {
   state = {
     ...state,
