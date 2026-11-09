@@ -1,0 +1,30 @@
+{"id": "F1-1A", "kind": "feedback", "stage": "stage_1", "code": "1A", "tier": 3, "tags": ["追问依据", "史实核实"]}
+{"id": "F1-1B", "kind": "feedback", "stage": "stage_1", "code": "1B", "tier": 2, "tags": ["关注损失", "方向正确但表层"]}
+{"id": "F1-1C", "kind": "feedback", "stage": "stage_1", "code": "1C", "tier": 1, "tags": ["先问态度", "情绪化"]}
+{"id": "F1-1D", "kind": "feedback", "stage": "stage_1", "code": "1D", "tier": 1, "tags": ["情绪发泄", "回避事实"]}
+{"id": "F2-2A", "kind": "feedback", "stage": "stage_2", "code": "2A", "tier": 3, "tags": ["对比打法", "抓住军事路线"]}
+{"id": "F2-2B", "kind": "feedback", "stage": "stage_2", "code": "2B", "tier": 2, "tags": ["追问原因", "停留在表层"]}
+{"id": "F2-2C", "kind": "feedback", "stage": "stage_2", "code": "2C", "tier": 1, "tags": ["事后质疑", "情绪化"]}
+{"id": "F2-2D", "kind": "feedback", "stage": "stage_2", "code": "2D", "tier": 1, "tags": ["关注士气", "单点归因"]}
+{"id": "F3-3A", "kind": "feedback", "stage": "stage_3", "code": "3A", "tier": 2, "tags": ["组织调整", "方向正确"]}
+{"id": "F3-3B", "kind": "feedback", "stage": "stage_3", "code": "3B", "tier": 1, "tags": ["追责情绪", "否定式归因"]}
+{"id": "F3-3C", "kind": "feedback", "stage": "stage_3", "code": "3C", "tier": 2, "tags": ["认同机动战", "未及组织层面"]}
+{"id": "F3-3D", "kind": "feedback", "stage": "stage_3", "code": "3D", "tier": 3, "tags": ["实事求是", "迁移到方法"]}
+{"id": "RV-seeker", "kind": "review", "choices": ["1A", "2A", "3A"], "expect_profile": "seeker", "tags": ["求实者", "两个tier3无tier1"]}
+{"id": "RV-growing", "kind": "review", "choices": ["1C", "2A", "3D"], "expect_profile": "growing", "tags": ["渐入佳境", "首关偏差后转向"]}
+{"id": "RV-cautious", "kind": "review", "choices": ["1B", "2A", "3A"], "expect_profile": "cautious", "tags": ["审慎执行者", "稳健但不深入"]}
+{"id": "RV-warm", "kind": "review", "choices": ["1C", "2A", "3B"], "expect_profile": "warm", "tags": ["热血的行动派", "3B特例"]}
+{"id": "QA-01", "kind": "qa", "question": "遵义会议是什么时候、在哪里召开的？", "category": "fact", "expect_kb": ["kb_zunyi_meeting"], "key_points": ["1935年1月15日", "贵州遵义", "中央政治局扩大会议"]}
+{"id": "QA-02", "kind": "qa", "question": "湘江战役之后，中央红军还剩多少人？", "category": "fact", "expect_kb": ["kb_xiangjiang"], "key_points": ["出发时8.6万余人", "湘江后只剩3万余人"]}
+{"id": "QA-03", "kind": "qa", "question": "博古是谁？他在会上做了什么？", "category": "fact", "expect_kb": ["kb_bogu", "kb_bogu_report"], "key_points": ["秦邦宪", "临时中央总负责人", "作正报告", "强调敌强我弱等客观原因"]}
+{"id": "QA-04", "kind": "qa", "question": "李德是什么来头？他的打法有什么问题？", "category": "fact", "expect_kb": ["kb_lide", "kb_fifth_encirclement"], "key_points": ["奥托·布劳恩", "共产国际军事顾问", "堡垒对堡垒", "短促突击"]}
+{"id": "QA-05", "kind": "qa", "question": "为什么一定要开遵义会议？", "category": "understanding", "expect_kb": ["kb_fifth_encirclement", "kb_xiangjiang", "kb_bogu_report"], "key_points": ["第五次反围剿失败", "湘江损失惨重", "需要总结军事路线", "红军前途危急"]}
+{"id": "QA-06", "kind": "qa", "question": "前四次反围剿为什么能打赢？", "category": "understanding", "expect_kb": ["kb_early_encirclement"], "key_points": ["运动战", "集中兵力各个击破", "诱敌深入", "十六字诀"]}
+{"id": "QA-07", "kind": "qa", "question": "遵义会议到底解决了什么问题？", "category": "understanding", "expect_kb": ["kb_zunyi_meeting", "kb_maozedong"], "key_points": ["总结第五次反围剿", "纠正军事路线", "增选毛泽东为政治局常委", "调整党和红军领导"]}
+{"id": "QA-08", "kind": "qa", "question": "会上是谁作副报告，态度怎么样？", "category": "fact", "expect_kb": ["kb_zhouenlai"], "key_points": ["周恩来", "主动承担指挥责任", "批评错误指挥"]}
+{"id": "QA-09", "kind": "qa", "question": "张闻天和王稼祥在会上起了什么作用？", "category": "fact", "expect_kb": ["kb_zhangwang"], "key_points": ["张闻天作反报告", "系统批判错误军事路线", "王稼祥关键一票", "提议毛泽东参与军事指挥"]}
+{"id": "QA-10", "kind": "qa", "question": "凯丰在会上是什么态度？", "category": "fact", "expect_kb": ["kb_kaifeng"], "key_points": ["何克全", "质疑毛泽东不懂马列", "拿孙子兵法说事"]}
+{"id": "QA-11", "kind": "qa", "question": "会议是在什么样的地方开的？", "category": "fact", "expect_kb": ["kb_meeting_room"], "key_points": ["遵义老城柏辉章公馆", "二楼客厅", "会场简朴"]}
+{"id": "QA-12", "kind": "qa", "question": "最高三人团是干什么的？", "category": "understanding", "expect_kb": ["kb_three_group"], "key_points": ["博古、李德、周恩来", "掌握最高军事指挥权", "决策集中"]}
+{"id": "QA-13", "kind": "qa", "question": "遵义会议之后红军去了哪里？", "category": "out_of_scope", "expect_kb": [], "key_points": ["应安全偏转", "不透露后续行军路线", "把话题拉回当前关卡"]}
+{"id": "QA-14", "kind": "qa", "question": "长征最后在什么地方会师？", "category": "out_of_scope", "expect_kb": [], "key_points": ["应安全偏转", "不回答会师地点与时间", "可用角色口吻说现在还看不到那么远"]}

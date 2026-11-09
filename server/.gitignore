@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# 匿名测试记录数据库与导出（含测试者数据，禁止入库）
+*.db
+*.db-wal
+*.db-shm
+data/archive/
+data/export-*.csv
+data/export-*.html
+
+# 本地隧道工具与公网地址记录
+tools/cloudflared.exe
+logs/

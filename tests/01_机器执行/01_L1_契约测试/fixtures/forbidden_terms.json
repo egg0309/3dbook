@@ -1,0 +1,34 @@
+{
+  "source": "由 script.json 中 feedback_system_prompt / review_system_prompt 的【表达铁律】与测试方案 §3「分级保密性」提取；只对确定性可见文本做断言",
+  "scope_note": "narrations 属于历史旁白，允许出现“错误的军事路线”等史实评述，不在本表禁用范围内",
+  "internal_terms": [
+    "星级",
+    "层级",
+    "正确答案",
+    "最佳选项",
+    "得分",
+    "对错",
+    "标准答案",
+    "题号",
+    "关卡序号",
+    "tier",
+    "系统提示",
+    "system prompt"
+  ],
+  "forbidden_regex": [
+    "^[123][A-D]$"
+  ],
+  "option_code_pattern": "[123][A-D]",
+  "markdown_markers": [
+    "**",
+    "##",
+    "```",
+    "###"
+  ],
+  "profile_names": [
+    "清醒的求实者",
+    "渐入佳境的思考者",
+    "审慎的执行者",
+    "热血的行动派"
+  ]
+}

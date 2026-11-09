@@ -1,0 +1,72 @@
+{
+  "generated_at": "2026-11-09T19:23:46",
+  "files": {
+    "pre_post": "C:\\Users\\32800\\Desktop\\易班\\test\\02_人工执行\\03_L4_真人测试\\03_数据录入\\pre_post.csv",
+    "survey": "C:\\Users\\32800\\Desktop\\易班\\test\\02_人工执行\\03_L4_真人测试\\03_数据录入\\survey.csv",
+    "usability": "C:\\Users\\32800\\Desktop\\易班\\test\\02_人工执行\\03_L4_真人测试\\03_数据录入\\usability.csv"
+  },
+  "knowledge": {
+    "n_paired": 26,
+    "pre_mean": 4.077,
+    "post_mean": 3.385,
+    "gain": -0.692,
+    "improved": 7,
+    "unchanged": 3,
+    "declined": 16,
+    "improvement_rate": 0.2692,
+    "gate_gain": {
+      "threshold": 1.0,
+      "meets": false
+    },
+    "gate_improvement_rate": {
+      "threshold": 0.6,
+      "meets": false
+    }
+  },
+  "dimensions": {
+    "immersion": {
+      "n_items": 78,
+      "mean": 4.09,
+      "gate": 3.5,
+      "meets": true
+    },
+    "trust": {
+      "n_items": 78,
+      "mean": 4.103,
+      "gate": 3.5,
+      "meets": true
+    },
+    "reuse": {
+      "n_items": 78,
+      "mean": 4.192,
+      "gate": 3.5,
+      "meets": true
+    }
+  },
+  "usability": {
+    "status": "未完成",
+    "n": 0,
+    "note": "没有观察记录；按施测包要求写“未完成”，不用设计目标人数充数。"
+  },
+  "sensitivity_duration_ge_300s": {
+    "n_paired": 6,
+    "pre_mean": 4.333,
+    "post_mean": 4.0,
+    "gain": -0.333,
+    "improved": 2,
+    "unchanged": 1,
+    "declined": 3,
+    "improvement_rate": 0.3333,
+    "gate_gain": {
+      "threshold": 1.0,
+      "meets": false
+    },
+    "gate_improvement_rate": {
+      "threshold": 0.6,
+      "meets": false
+    },
+    "note": "用时≥300秒的敏感性分析，属于探索性分组，不是正式判定口径。"
+  },
+  "overall_effect": "FAIL",
+  "gate_note": "门槛：知识增益≥1.0、提升比例≥60%、三维度均值≥3.5；可用性单独判定。"
+}
